@@ -28,13 +28,16 @@ WORKDIR /home/puget-app-pack/app
 # Clone ComfyUI (Release branch/standard)
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git .
 
+# Create and activate virtual environment (required for Ubuntu 24.04 / PEP 668)
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 # Install Python Requirements
-# Note: We install system-wide or user-local for simplicity in this container
-RUN pip3 install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Install 3D node dependencies (fixes nodes_load_3d.py import errors)
-RUN pip3 install --no-cache-dir trimesh pygltflib numpy-stl
+RUN pip install --no-cache-dir trimesh pygltflib numpy-stl
 
 # Ensure standard data directories exist for volume mounting
 # Using -p for idempotent creation (some may exist from git clone)
