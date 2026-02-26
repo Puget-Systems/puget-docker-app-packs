@@ -408,7 +408,6 @@ case $FLAVOR in
     team_llm)
         echo -e "${GREEN}Team LLM (vLLM + Open WebUI)${NC}"
         echo "Production inference with multi-GPU tensor parallelism."
-        echo "Run ./init.sh after launch to configure model and GPU settings."
         echo ""
         # Cache Proxy Configuration (optional)
         echo -e "${YELLOW}Cache Proxy (Optional):${NC}"
@@ -418,6 +417,52 @@ case $FLAVOR in
         if [ -n "$CACHE_URL" ]; then
             echo "CACHE_PROXY=$CACHE_URL" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Cache proxy configured: $CACHE_URL${NC}"
+        fi
+        echo ""
+        # GPU Detection
+        echo -e "${YELLOW}GPU Configuration:${NC}"
+        if command -v nvidia-smi &> /dev/null; then
+            GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
+            GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+            VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+            VRAM_GB=$((VRAM_MB / 1024))
+            TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
+            echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+        else
+            GPU_COUNT=1
+            TOTAL_VRAM=32
+            echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
+        fi
+        echo ""
+        # Model Selection
+        echo -e "${YELLOW}Select a model to serve:${NC}"
+        echo "  1) Qwen 3 (8B)              - Fast, single GPU (~5 GB)"
+        if [ "$GPU_COUNT" -gt 1 ]; then
+            echo "  2) Qwen 3 (32B)            - Best quality, single GPU (~20 GB)"
+            echo "  3) DeepSeek R1 (70B)       - Flagship reasoning, spans ${GPU_COUNT} GPUs (~42 GB) [Recommended]"
+        else
+            echo "  2) Qwen 3 (32B)            - Best quality (~20 GB) [Recommended]"
+            echo "  3) DeepSeek R1 (70B)       - Flagship reasoning (~42 GB, may not fit single GPU)"
+        fi
+        echo "  4) Skip                    - I'll configure via .env later"
+        echo ""
+        read -p "Select [1-4]: " VLLM_MODEL_SELECT
+        
+        VLLM_MODEL_ID=""
+        VLLM_GPU_COUNT=1
+        case $VLLM_MODEL_SELECT in
+            1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1 ;;
+            2) VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=1 ;;
+            3) VLLM_MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-70B"; VLLM_GPU_COUNT=$GPU_COUNT ;;
+            *) echo "Skipping model configuration. Edit .env before starting." ;;
+        esac
+        
+        if [ -n "$VLLM_MODEL_ID" ]; then
+            echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
+            echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
+            echo "MAX_CONTEXT=32768" >> "$INSTALL_DIR/.env"
+            echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
+            echo -e "  The model will download on first launch."
         fi
         ;;
     docker-base)
@@ -505,12 +550,13 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 ;;
             team_llm)
                 LOCAL_IP=$(hostname -I | awk '{print $1}')
-                echo -e "\n${GREEN}vLLM server is starting...${NC}"
+                echo -e "\n${GREEN}vLLM server is starting (model downloads on first launch)...${NC}"
                 echo -e "  Chat UI:  ${BLUE}http://localhost:3000${NC}"
                 echo -e "  API:      ${BLUE}http://localhost:8000/v1${NC}"
                 echo -e "  Network:  ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
-                echo -e "Run ${BLUE}./init.sh${NC} to configure model and GPU settings."
+                echo -e "  Monitor download progress: ${BLUE}docker compose logs -f inference${NC}"
+                echo -e "  Re-configure model:        ${BLUE}./init.sh${NC}"
                 ;;
         esac
     else
