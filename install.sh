@@ -436,13 +436,16 @@ case $FLAVOR in
         echo ""
         # Model Selection
         echo -e "${YELLOW}Select a model to serve:${NC}"
-        echo "  1) Qwen 3 (8B)              - Fast, single GPU (~5 GB)"
+        echo "  vLLM loads models in full precision (BF16) by default."
+        echo "  Model 3 uses AWQ quantization to fit larger models."
+        echo ""
+        echo "  1) Qwen 3 (8B)              - Fast, single GPU (~16 GB BF16)"
         if [ "$GPU_COUNT" -gt 1 ]; then
-            echo "  2) Qwen 3 (32B)            - Best quality, single GPU (~20 GB)"
-            echo "  3) DeepSeek R1 (70B)       - Flagship reasoning, spans ${GPU_COUNT} GPUs (~42 GB) [Recommended]"
+            echo "  2) Qwen 3 (32B)            - Best quality, spans ${GPU_COUNT} GPUs (~64 GB BF16)"
+            echo "  3) DeepSeek R1 (70B AWQ)   - Flagship reasoning, spans ${GPU_COUNT} GPUs (~38 GB) [Recommended]"
         else
-            echo "  2) Qwen 3 (32B)            - Best quality (~20 GB) [Recommended]"
-            echo "  3) DeepSeek R1 (70B)       - Flagship reasoning (~42 GB, may not fit single GPU)"
+            echo "  2) Qwen 3 (32B)            - Best quality (~64 GB BF16, needs 64+ GB VRAM)"
+            echo "  3) DeepSeek R1 (70B AWQ)   - Flagship reasoning (~38 GB quantized)"
         fi
         echo "  4) Skip                    - I'll configure via .env later"
         echo ""
@@ -452,8 +455,8 @@ case $FLAVOR in
         VLLM_GPU_COUNT=1
         case $VLLM_MODEL_SELECT in
             1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1 ;;
-            2) VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=1 ;;
-            3) VLLM_MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-70B"; VLLM_GPU_COUNT=$GPU_COUNT ;;
+            2) VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=$GPU_COUNT ;;
+            3) VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT ;;
             *) echo "Skipping model configuration. Edit .env before starting." ;;
         esac
         

@@ -49,45 +49,31 @@ echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
 
 # Always available
-echo "  1) Qwen 3 8B            - Fast, lightweight (~5 GB)"
-echo "  2) Qwen 3 32B           - Best quality, single GPU (~20 GB) [Recommended]"
+echo "  vLLM loads models in full precision (BF16) by default."
+echo "  Quantized (AWQ) options are available for larger models."
+echo ""
+echo "  1) Qwen 3 8B            - Fast, single GPU (~16 GB BF16)"
+echo "  2) Qwen 3 32B           - Best quality (~64 GB BF16, needs multi-GPU)"
 
 # Conditional on VRAM
-if [ "$TOTAL_VRAM" -ge 45 ]; then
-    echo "  3) DeepSeek R1 70B      - Flagship reasoning (~42 GB)"
+if [ "$TOTAL_VRAM" -ge 40 ]; then
+    echo "  3) DeepSeek R1 70B AWQ  - Flagship reasoning (~38 GB quantized) [Recommended]"
 else
-    echo -e "  3) DeepSeek R1 70B      - ${RED}Requires ~42 GB (you have ${TOTAL_VRAM} GB)${NC}"
+    echo -e "  3) DeepSeek R1 70B AWQ  - ${RED}Requires ~38 GB (you have ${TOTAL_VRAM} GB)${NC}"
 fi
 
-if [ "$TOTAL_VRAM" -ge 65 ]; then
-    echo "  4) Devstral 2 123B      - Best coding model (~72 GB)"
-else
-    echo -e "  4) Devstral 2 123B      - ${RED}Requires ~72 GB (you have ${TOTAL_VRAM} GB)${NC}"
-fi
-
-if [ "$TOTAL_VRAM" -ge 65 ]; then
-    echo "  5) Llama 4 Scout        - Multimodal (text+image, ~63 GB)"
-else
-    echo -e "  5) Llama 4 Scout        - ${RED}Requires ~63 GB (you have ${TOTAL_VRAM} GB)${NC}"
-fi
-
-echo "  6) Custom               - Enter a HuggingFace model ID"
-echo "  7) Exit"
+echo "  4) Custom               - Enter a HuggingFace model ID"
+echo "  5) Exit"
 echo ""
-read -p "Select [1-7]: " CHOICE
+read -p "Select [1-5]: " CHOICE
 
 MODEL_ID=""
 PARALLEL=$GPU_COUNT
 case $CHOICE in
     1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1 ;;
-    2) MODEL_ID="Qwen/Qwen3-32B"; PARALLEL=1 ;;
-    3) MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-70B" ;;
-    4) MODEL_ID="mistralai/Devstral-Small-2-25B"
-       echo -e "${YELLOW}Note: Full Devstral 2 123B requires a gated HuggingFace token.${NC}"
-       echo -e "      Using Devstral Small 2 (25B) as default. Set MODEL_ID in .env for the full model.${NC}"
-       PARALLEL=1 ;;
-    5) MODEL_ID="meta-llama/Llama-4-Scout-17B-16E-Instruct" ;;
-    6) read -p "  Enter HuggingFace model ID: " MODEL_ID ;;
+    2) MODEL_ID="Qwen/Qwen3-32B" ;;
+    3) MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ" ;;
+    4) read -p "  Enter HuggingFace model ID: " MODEL_ID ;;
     *) echo "Exiting."; exit 0 ;;
 esac
 

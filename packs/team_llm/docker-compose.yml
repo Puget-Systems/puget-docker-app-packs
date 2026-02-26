@@ -28,6 +28,7 @@ services:
       - --gpu-memory-utilization=0.90
       - --dtype=auto
       - --trust-remote-code
+      - --disable-custom-all-reduce
 
   # 2. User Interface (Open WebUI)
   ui:
