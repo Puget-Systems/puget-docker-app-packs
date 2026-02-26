@@ -27,7 +27,8 @@ services:
       - --model=${MODEL_ID:-Qwen/Qwen3-32B}
       - --tensor-parallel-size=${GPU_COUNT:-1}
       - --max-model-len=${MAX_CONTEXT:-32768}
-      - --gpu-memory-utilization=0.90
+      - --gpu-memory-utilization=0.80
+      - --max-num-seqs=32
       - --dtype=auto
       - --trust-remote-code
       - --disable-custom-all-reduce
