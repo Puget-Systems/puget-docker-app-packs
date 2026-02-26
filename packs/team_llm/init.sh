@@ -118,13 +118,50 @@ echo ""
 
 read -p "Start the stack now? (Y/n): " START
 if [[ "$START" != "n" && "$START" != "N" ]]; then
-    echo -e "${BLUE}Starting vLLM server (first run downloads the model, this may take a while)...${NC}"
+    echo -e "${BLUE}Starting vLLM server...${NC}"
     docker compose up -d
     echo ""
+    
+    LOCAL_IP=$(hostname -I | awk '{print $1}')
     echo -e "${GREEN}✓ Stack starting.${NC}"
-    echo -e "  Monitor model download:  ${BLUE}docker compose logs -f inference${NC}"
-    echo -e "  Chat UI (after ready):   ${BLUE}http://localhost:3000${NC}"
-    echo -e "  API endpoint:            ${BLUE}http://localhost:8000/v1${NC}"
+    echo -e "  Chat UI:  ${BLUE}http://localhost:3000${NC}"
+    echo -e "  API:      ${BLUE}http://localhost:8000/v1${NC}"
+    echo -e "  Network:  ${BLUE}http://${LOCAL_IP}:3000${NC}"
+    echo ""
+    
+    echo -e "${YELLOW}Waiting for model to download and load...${NC}"
+    echo "  (This may take 5-30 minutes depending on model size and bandwidth)"
+    echo ""
+    
+    CONTAINER_NAME="puget_vllm"
+    READY=false
+    
+    while ! $READY; do
+        # Check if container is still running
+        if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo -e "\n${RED}✗ vLLM container exited. Check logs:${NC}"
+            echo -e "  ${BLUE}docker compose logs inference${NC}"
+            break
+        fi
+        
+        # Check if API is responding (model fully loaded)
+        if curl -s --max-time 2 http://localhost:8000/v1/models > /dev/null 2>&1; then
+            echo -e "\n${GREEN}✓ Model loaded and ready!${NC}"
+            READY=true
+            break
+        fi
+        
+        # Show download progress
+        CACHE_SIZE=$(docker exec "$CONTAINER_NAME" du -sm /root/.cache/huggingface/ 2>/dev/null | awk '{print $1}')
+        if [ -n "$CACHE_SIZE" ]; then
+            printf "\r  ⏳ Downloading model... %s MB cached" "$CACHE_SIZE"
+        else
+            printf "\r  ⏳ Initializing download..."
+        fi
+        
+        sleep 5
+    done
+    echo ""
 else
     echo "Run 'docker compose up -d' when ready."
 fi
