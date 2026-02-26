@@ -569,6 +569,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                     # Convert model ID to HF cache directory format (org/model -> models--org--model)
                     HF_CACHE_DIR="models--$(echo "$VLLM_MODEL_ID" | sed 's|/|--|g')"
                     READY=false
+                    LAST_PHASE=""
                     
                     while ! $READY; do
                         # Check if container is still running
@@ -585,15 +586,51 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                             break
                         fi
                         
-                        # Show download progress (scoped to this specific model)
-                        CACHE_SIZE=$(docker exec "$CONTAINER_NAME" du -sm "/root/.cache/huggingface/hub/${HF_CACHE_DIR}/" 2>/dev/null | awk '{print $1}')
-                        if [ -n "$CACHE_SIZE" ] && [ "$CACHE_SIZE" -gt 0 ] 2>/dev/null; then
-                            printf "\r  ⏳ Downloading model... %s MB cached" "$CACHE_SIZE"
+                        # Parse the latest vLLM log line to determine startup phase
+                        LAST_LOG=$(docker logs "$CONTAINER_NAME" --tail 5 2>&1)
+                        PHASE=""
+                        DETAIL=""
+                        
+                        if echo "$LAST_LOG" | grep -q "CUDA graphs"; then
+                            GRAPH_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+%\|' | sed 's/|//' | tail -1)
+                            PHASE="Capturing CUDA graphs"
+                            DETAIL="${GRAPH_PCT:-working...}"
+                        elif echo "$LAST_LOG" | grep -q "torch.compile\|Dynamo bytecode\|compile range"; then
+                            PHASE="Compiling model kernels"
+                            DETAIL="(torch.compile)"
+                        elif echo "$LAST_LOG" | grep -q "Loading safetensors\|Loading weights\|Starting to load model"; then
+                            SHARD_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+% Completed' | tail -1)
+                            PHASE="Loading model weights"
+                            DETAIL="${SHARD_PCT:-starting...}"
+                        elif echo "$LAST_LOG" | grep -q "Autotuning"; then
+                            PHASE="Autotuning kernels"
+                            DETAIL=""
                         else
-                            printf "\r  ⏳ Initializing download..."
+                            # Fall back to download progress
+                            CACHE_SIZE=$(docker exec "$CONTAINER_NAME" du -sm "/root/.cache/huggingface/hub/${HF_CACHE_DIR}/" 2>/dev/null | awk '{print $1}')
+                            if [ -n "$CACHE_SIZE" ] && [ "$CACHE_SIZE" -gt 0 ] 2>/dev/null; then
+                                PHASE="Downloading model"
+                                DETAIL="${CACHE_SIZE} MB cached"
+                            else
+                                PHASE="Initializing"
+                                DETAIL=""
+                            fi
                         fi
                         
-                        sleep 5
+                        # Print phase with optional detail
+                        if [ -n "$DETAIL" ]; then
+                            printf "\r  ⏳ %s... %s   " "$PHASE" "$DETAIL"
+                        else
+                            printf "\r  ⏳ %s...           " "$PHASE"
+                        fi
+                        
+                        # Print a new line when phase changes to show progression
+                        if [ "$PHASE" != "$LAST_PHASE" ] && [ -n "$LAST_PHASE" ]; then
+                            echo ""
+                        fi
+                        LAST_PHASE="$PHASE"
+                        
+                        sleep 3
                     done
                     echo ""
                 fi
