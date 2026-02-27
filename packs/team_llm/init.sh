@@ -136,14 +136,48 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
     CONTAINER_NAME="puget_vllm"
     # Convert model ID to HF cache directory format (org/model -> models--org--model)
     HF_CACHE_DIR="models--$(echo "$MODEL_ID" | sed 's|/|--|g')"
+    HF_CACHE_ROOT="/root/.cache/huggingface"
     READY=false
     LAST_PHASE=""
+    PHASE_LEVEL=0           # Monotonic: phases only advance forward
+    LAST_RESTART_COUNT=0    # Track container restarts to detect crash loops
+    CRASH_DETECTIONS=0      # Number of times we've seen a restart increment
     
     while ! $READY; do
         # Check if container is still running
         if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
             echo -e "\n${RED}✗ vLLM container exited. Check logs:${NC}"
             echo -e "  ${BLUE}docker compose logs inference${NC}"
+            break
+        fi
+        
+        # Detect crash loops (container restarting repeatedly)
+        RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' "$CONTAINER_NAME" 2>/dev/null || echo "0")
+        if [ "$RESTART_COUNT" -gt "$LAST_RESTART_COUNT" ] 2>/dev/null; then
+            CRASH_DETECTIONS=$((CRASH_DETECTIONS + 1))
+            LAST_RESTART_COUNT=$RESTART_COUNT
+            # Reset phase tracking since we're on a fresh attempt
+            PHASE_LEVEL=0
+            LAST_PHASE=""
+        fi
+        
+        if [ "$CRASH_DETECTIONS" -ge 2 ]; then
+            echo ""
+            echo -e "${RED}✗ vLLM is crash-looping (restarted ${RESTART_COUNT} times).${NC}"
+            echo ""
+            # Extract the actual error from the logs
+            ERROR_MSG=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -E "RuntimeError|OutOfMemoryError|CUDA|Error|error" | tail -5)
+            if [ -n "$ERROR_MSG" ]; then
+                echo -e "${RED}  Error from logs:${NC}"
+                echo "$ERROR_MSG" | while IFS= read -r line; do
+                    echo -e "  ${YELLOW}${line}${NC}"
+                done
+                echo ""
+            fi
+            echo "  Troubleshooting:"
+            echo -e "  ${BLUE}docker compose logs inference${NC}  - View full logs"
+            echo -e "  Try reducing GPU memory: edit .env and lower MAX_CONTEXT"
+            echo -e "  Or try a smaller model: ${BLUE}./init.sh${NC}"
             break
         fi
         
@@ -155,50 +189,74 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
         fi
         
         # Parse the latest vLLM log line to determine startup phase
-        LAST_LOG=$(docker logs "$CONTAINER_NAME" --tail 5 2>&1)
-        PHASE=""
+        # Use --tail 10 to catch log lines that may scroll past quickly
+        LAST_LOG=$(docker logs "$CONTAINER_NAME" --tail 10 2>&1)
+        CANDIDATE_PHASE=""
+        CANDIDATE_LEVEL=0
         DETAIL=""
         
+        # Check phases in order of progression (highest priority first)
         if echo "$LAST_LOG" | grep -q "CUDA graphs"; then
-            # Extract progress from the tqdm bar, e.g. " 45%|████      | 5/11"
             GRAPH_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+%\|' | sed 's/|//' | tail -1)
-            PHASE="Capturing CUDA graphs"
+            CANDIDATE_PHASE="Capturing CUDA graphs"
+            CANDIDATE_LEVEL=5
             DETAIL="${GRAPH_PCT:-working...}"
         elif echo "$LAST_LOG" | grep -q "torch.compile\|Dynamo bytecode\|compile range"; then
-            PHASE="Compiling model kernels"
+            CANDIDATE_PHASE="Compiling model kernels"
+            CANDIDATE_LEVEL=4
             DETAIL="(torch.compile)"
-        elif echo "$LAST_LOG" | grep -q "Loading safetensors\|Loading weights\|Starting to load model"; then
-            # Extract shard progress, e.g. "33% Completed | 3/9"
-            SHARD_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+% Completed' | tail -1)
-            PHASE="Loading model weights"
-            DETAIL="${SHARD_PCT:-starting...}"
         elif echo "$LAST_LOG" | grep -q "Autotuning"; then
-            PHASE="Autotuning kernels"
+            CANDIDATE_PHASE="Autotuning kernels"
+            CANDIDATE_LEVEL=3
             DETAIL=""
+        elif echo "$LAST_LOG" | grep -q "Loading safetensors\|Loading weights\|Starting to load model"; then
+            SHARD_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+% Completed' | tail -1)
+            CANDIDATE_PHASE="Loading model weights"
+            CANDIDATE_LEVEL=2
+            DETAIL="${SHARD_PCT:-starting...}"
         else
             # Fall back to download progress
-            CACHE_SIZE=$(docker exec "$CONTAINER_NAME" du -sm "/root/.cache/huggingface/hub/${HF_CACHE_DIR}/" 2>/dev/null | awk '{print $1}')
+            # Check full HF cache for this model (blobs can be large, snapshots are symlinks)
+            CACHE_SIZE=$(docker exec "$CONTAINER_NAME" du -smc "${HF_CACHE_ROOT}/hub/${HF_CACHE_DIR}/" 2>/dev/null | tail -1 | awk '{print $1}')
+            if [ -z "$CACHE_SIZE" ] || [ "$CACHE_SIZE" -eq 0 ] 2>/dev/null; then
+                # Try broader search in case HF cache layout differs
+                CACHE_SIZE=$(docker exec "$CONTAINER_NAME" du -smc "${HF_CACHE_ROOT}/" 2>/dev/null | tail -1 | awk '{print $1}')
+            fi
             if [ -n "$CACHE_SIZE" ] && [ "$CACHE_SIZE" -gt 0 ] 2>/dev/null; then
-                PHASE="Downloading model"
-                DETAIL="${CACHE_SIZE} MB cached"
+                CANDIDATE_PHASE="Downloading model"
+                CANDIDATE_LEVEL=1
+                if [ "$CACHE_SIZE" -ge 1024 ] 2>/dev/null; then
+                    CACHE_GB=$(echo "scale=1; $CACHE_SIZE / 1024" | bc 2>/dev/null || echo "$((CACHE_SIZE / 1024))")
+                    DETAIL="${CACHE_GB} GB cached"
+                else
+                    DETAIL="${CACHE_SIZE} MB cached"
+                fi
             else
-                PHASE="Initializing"
+                CANDIDATE_PHASE="Initializing"
+                CANDIDATE_LEVEL=0
                 DETAIL=""
             fi
         fi
         
-        # Print phase with optional detail
+        # Only advance phase forward, never regress (prevents oscillation)
+        if [ "$CANDIDATE_LEVEL" -ge "$PHASE_LEVEL" ]; then
+            # Print newline to preserve the old status line before showing new phase
+            if [ "$CANDIDATE_PHASE" != "$LAST_PHASE" ] && [ -n "$LAST_PHASE" ]; then
+                echo ""
+            fi
+            PHASE="$CANDIDATE_PHASE"
+            PHASE_LEVEL=$CANDIDATE_LEVEL
+            LAST_PHASE="$PHASE"
+        else
+            PHASE="$LAST_PHASE"
+        fi
+        
+        # Print phase with optional detail (overwrites current line)
         if [ -n "$DETAIL" ]; then
             printf "\r  ⏳ %s... %s   " "$PHASE" "$DETAIL"
         else
             printf "\r  ⏳ %s...           " "$PHASE"
         fi
-        
-        # Print a new line when phase changes to show progression
-        if [ "$PHASE" != "$LAST_PHASE" ] && [ -n "$LAST_PHASE" ]; then
-            echo ""
-        fi
-        LAST_PHASE="$PHASE"
         
         sleep 3
     done

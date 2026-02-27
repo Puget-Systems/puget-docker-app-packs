@@ -23,17 +23,19 @@ services:
     volumes:
       - vllm_cache:/root/.cache/huggingface
     ipc: host
+    entrypoint: ["/bin/bash", "-c"]
     command:
-      - --model=${MODEL_ID:-Qwen/Qwen3-32B}
-      - --tensor-parallel-size=${GPU_COUNT:-1}
-      - --max-model-len=${MAX_CONTEXT:-32768}
-      - --gpu-memory-utilization=0.80
-      - --max-num-seqs=32
-      - --dtype=auto
-      - --trust-remote-code
-      - --disable-custom-all-reduce
-      - --enable-auto-tool-choice
-      - --tool-call-parser=hermes
+      - >
+        exec python3 -m vllm.entrypoints.openai.api_server
+        --model=${MODEL_ID:-Qwen/Qwen3-32B}
+        --tensor-parallel-size=${GPU_COUNT:-1}
+        --max-model-len=${MAX_CONTEXT:-32768}
+        --gpu-memory-utilization=0.80
+        --max-num-seqs=32
+        --dtype=auto
+        --trust-remote-code
+        --disable-custom-all-reduce
+        ${TOOL_CALL_ARGS:-}
 
   # 2. User Interface (Open WebUI)
   ui:
