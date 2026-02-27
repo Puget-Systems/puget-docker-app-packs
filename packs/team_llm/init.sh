@@ -298,30 +298,23 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
             CANDIDATE_LEVEL=2
             DETAIL="${SHARD_PCT:-starting...}"
         elif echo "$LAST_LOG" | grep -qiE "Downloading|Fetching"; then
-            # Parse HuggingFace download progress from tqdm bars in logs
-            # Patterns: "Downloading model.safetensors: 45%|...| 2.3G/5.1G"
-            #           "Fetching 15 files: 30%|..."
-            DL_PCT=$(echo "$LAST_LOG" | grep -iE "Downloading|Fetching" | grep -oE '[0-9]+%' | tail -1)
-            # Try to extract size progress like "2.3G/5.1G" or "500M/2.0G"
-            DL_SIZE=$(echo "$LAST_LOG" | grep -iE "Downloading" | grep -oE '[0-9.]+[GMK]/[0-9.]+[GMK]' | tail -1)
+            # Download phase detected from log output.
+            # Don't trust tqdm values from logs (they go stale quickly).
+            # Always use docker stats NET I/O for live progress.
             CANDIDATE_PHASE="Downloading model"
             CANDIDATE_LEVEL=1
-            if [ -n "$DL_SIZE" ]; then
-                DETAIL="${DL_PCT:-} ${DL_SIZE}"
-            elif [ -n "$DL_PCT" ]; then
-                DETAIL="${DL_PCT}"
-            else
-                DETAIL="in progress..."
-            fi
-        else
-            # No recognizable phase in logs — check network I/O for silent downloads
-            # Docker/HuggingFace tqdm often doesn't flush to container logs
+            DETAIL=""  # Will be filled by NET I/O below
+        fi
+        
+        # For any phase at level <= 1 (Starting up, Initializing, Downloading),
+        # check NET I/O to detect silent downloads or show live progress.
+        # This catches the case where tqdm never flushes OR has gone stale.
+        if [ "$CANDIDATE_LEVEL" -le 1 ] || [ -z "$CANDIDATE_PHASE" ]; then
             NET_RX=$(docker stats "$CONTAINER_NAME" --no-stream --format '{{.NetIO}}' 2>/dev/null | awk -F'/' '{print $1}' | xargs)
-            # Parse value and unit (e.g. "35.5GB", "500MB", "1.2kB")
             NET_VAL=$(echo "$NET_RX" | grep -oE '[0-9.]+' | head -1)
             NET_UNIT=$(echo "$NET_RX" | grep -oE '[A-Za-z]+' | head -1)
             
-            # Convert to GB for comparison
+            # Convert to GB for percentage calculation
             NET_GB=0
             case "$NET_UNIT" in
                 GB|GiB) NET_GB=$(echo "$NET_VAL" | cut -d. -f1) ;;
@@ -329,6 +322,7 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
                 TB|TiB) NET_GB=$(($(echo "$NET_VAL" | cut -d. -f1) * 1024)) ;;
             esac
             
+            # If significant network activity, show download progress
             if [ "$NET_GB" -gt 0 ] 2>/dev/null && [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
                 DL_PCT=$((NET_GB * 100 / MODEL_SIZE_GB))
                 [ "$DL_PCT" -gt 100 ] && DL_PCT=100
@@ -336,17 +330,36 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
                 CANDIDATE_LEVEL=1
                 DETAIL="${DL_PCT}% (${NET_RX} / ${MODEL_SIZE_GB} GB)"
             elif [ -n "$NET_VAL" ] && echo "$NET_UNIT" | grep -qiE "MB|MiB" 2>/dev/null; then
-                CANDIDATE_PHASE="Downloading model"
-                CANDIDATE_LEVEL=1
-                DETAIL="${NET_RX}"
-            elif echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
-                CANDIDATE_PHASE="Initializing model"
-                CANDIDATE_LEVEL=0
-                DETAIL=""
-            else
-                CANDIDATE_PHASE="Starting up"
-                CANDIDATE_LEVEL=0
-                DETAIL="waiting..."
+                # Sub-GB download — show raw value
+                NET_MB=$(echo "$NET_VAL" | cut -d. -f1)
+                if [ "${NET_MB:-0}" -gt 50 ] 2>/dev/null; then
+                    # More than 50 MB downloaded — probably model data
+                    CANDIDATE_PHASE="Downloading model"
+                    CANDIDATE_LEVEL=1
+                    DETAIL="${NET_RX}"
+                elif [ -z "$CANDIDATE_PHASE" ]; then
+                    # Small amount — could be metadata
+                    if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
+                        CANDIDATE_PHASE="Initializing model"
+                        CANDIDATE_LEVEL=0
+                        DETAIL=""
+                    else
+                        CANDIDATE_PHASE="Starting up"
+                        CANDIDATE_LEVEL=0
+                        DETAIL="waiting..."
+                    fi
+                fi
+            elif [ -z "$CANDIDATE_PHASE" ]; then
+                # No network activity and no log match
+                if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
+                    CANDIDATE_PHASE="Initializing model"
+                    CANDIDATE_LEVEL=0
+                    DETAIL=""
+                else
+                    CANDIDATE_PHASE="Starting up"
+                    CANDIDATE_LEVEL=0
+                    DETAIL="waiting..."
+                fi
             fi
         fi
         

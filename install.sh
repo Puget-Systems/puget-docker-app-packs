@@ -720,19 +720,13 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                             CANDIDATE_LEVEL=2
                             DETAIL="${SHARD_PCT:-starting...}"
                         elif echo "$LAST_LOG" | grep -qiE "Downloading|Fetching"; then
-                            DL_PCT=$(echo "$LAST_LOG" | grep -iE "Downloading|Fetching" | grep -oE '[0-9]+%' | tail -1)
-                            DL_SIZE=$(echo "$LAST_LOG" | grep -iE "Downloading" | grep -oE '[0-9.]+[GMK]/[0-9.]+[GMK]' | tail -1)
                             CANDIDATE_PHASE="Downloading model"
                             CANDIDATE_LEVEL=1
-                            if [ -n "$DL_SIZE" ]; then
-                                DETAIL="${DL_PCT:-} ${DL_SIZE}"
-                            elif [ -n "$DL_PCT" ]; then
-                                DETAIL="${DL_PCT}"
-                            else
-                                DETAIL="in progress..."
-                            fi
-                        else
-                            # No recognizable phase in logs — check network I/O for silent downloads
+                            DETAIL=""
+                        fi
+                        
+                        # For any phase at level <= 1, check NET I/O for live download progress
+                        if [ "$CANDIDATE_LEVEL" -le 1 ] || [ -z "$CANDIDATE_PHASE" ]; then
                             NET_RX=$(docker stats "$CONTAINER_NAME" --no-stream --format '{{.NetIO}}' 2>/dev/null | awk -F'/' '{print $1}' | xargs)
                             NET_VAL=$(echo "$NET_RX" | grep -oE '[0-9.]+' | head -1)
                             NET_UNIT=$(echo "$NET_RX" | grep -oE '[A-Za-z]+' | head -1)
@@ -751,17 +745,32 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                                 CANDIDATE_LEVEL=1
                                 DETAIL="${DL_PCT}% (${NET_RX} / ${VLLM_MODEL_SIZE_GB} GB)"
                             elif [ -n "$NET_VAL" ] && echo "$NET_UNIT" | grep -qiE "MB|MiB" 2>/dev/null; then
-                                CANDIDATE_PHASE="Downloading model"
-                                CANDIDATE_LEVEL=1
-                                DETAIL="${NET_RX}"
-                            elif echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
-                                CANDIDATE_PHASE="Initializing model"
-                                CANDIDATE_LEVEL=0
-                                DETAIL=""
-                            else
-                                CANDIDATE_PHASE="Starting up"
-                                CANDIDATE_LEVEL=0
-                                DETAIL="waiting..."
+                                NET_MB=$(echo "$NET_VAL" | cut -d. -f1)
+                                if [ "${NET_MB:-0}" -gt 50 ] 2>/dev/null; then
+                                    CANDIDATE_PHASE="Downloading model"
+                                    CANDIDATE_LEVEL=1
+                                    DETAIL="${NET_RX}"
+                                elif [ -z "$CANDIDATE_PHASE" ]; then
+                                    if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
+                                        CANDIDATE_PHASE="Initializing model"
+                                        CANDIDATE_LEVEL=0
+                                        DETAIL=""
+                                    else
+                                        CANDIDATE_PHASE="Starting up"
+                                        CANDIDATE_LEVEL=0
+                                        DETAIL="waiting..."
+                                    fi
+                                fi
+                            elif [ -z "$CANDIDATE_PHASE" ]; then
+                                if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
+                                    CANDIDATE_PHASE="Initializing model"
+                                    CANDIDATE_LEVEL=0
+                                    DETAIL=""
+                                else
+                                    CANDIDATE_PHASE="Starting up"
+                                    CANDIDATE_LEVEL=0
+                                    DETAIL="waiting..."
+                                fi
                             fi
                         fi
                         
