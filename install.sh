@@ -453,18 +453,46 @@ case $FLAVOR in
         
         VLLM_MODEL_ID=""
         VLLM_GPU_COUNT=1
+        VLLM_MODEL_SIZE_GB=0  # Approximate weight size in GB for memory planning
         case $VLLM_MODEL_SELECT in
-            1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1 ;;
-            2) VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=$GPU_COUNT ;;
-            3) VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT ;;
+            1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16 ;;
+            2) VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=64 ;;
+            3) VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=38 ;;
             *) echo "Skipping model configuration. Edit .env before starting." ;;
         esac
         
         if [ -n "$VLLM_MODEL_ID" ]; then
+            # Auto-tune GPU memory settings based on model size vs available VRAM
+            AVAILABLE_VRAM=$((VRAM_GB * VLLM_GPU_COUNT))
+            GPU_MEM_UTIL="0.90"
+            MAX_CTX=32768
+            
+            if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+                WEIGHT_PCT=$((VLLM_MODEL_SIZE_GB * 100 / AVAILABLE_VRAM))
+                
+                if [ "$WEIGHT_PCT" -ge 95 ]; then
+                    echo -e "${RED}⚠ Warning: ${VLLM_MODEL_ID} (~${VLLM_MODEL_SIZE_GB} GB) may not fit in ${AVAILABLE_VRAM} GB VRAM.${NC}"
+                    echo -e "${YELLOW}  Consider a quantized variant or adding more GPUs.${NC}"
+                    GPU_MEM_UTIL="0.97"
+                    MAX_CTX=4096
+                elif [ "$WEIGHT_PCT" -ge 85 ]; then
+                    GPU_MEM_UTIL="0.95"
+                    MAX_CTX=8192
+                elif [ "$WEIGHT_PCT" -ge 70 ]; then
+                    GPU_MEM_UTIL="0.92"
+                    MAX_CTX=16384
+                else
+                    GPU_MEM_UTIL="0.90"
+                    MAX_CTX=32768
+                fi
+            fi
+            
             echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
             echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
-            echo "MAX_CONTEXT=32768" >> "$INSTALL_DIR/.env"
+            echo "MAX_CONTEXT=$MAX_CTX" >> "$INSTALL_DIR/.env"
+            echo "GPU_MEMORY_UTILIZATION=$GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
+            echo -e "  Memory: ${GPU_MEM_UTIL} utilization, ${MAX_CTX} context tokens"
             echo -e "  The model will download on first launch."
         fi
         ;;

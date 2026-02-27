@@ -69,10 +69,11 @@ read -p "Select [1-5]: " CHOICE
 
 MODEL_ID=""
 PARALLEL=$GPU_COUNT
+MODEL_SIZE_GB=0  # Approximate weight size in GB for memory planning
 case $CHOICE in
-    1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1 ;;
-    2) MODEL_ID="Qwen/Qwen3-32B" ;;
-    3) MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ" ;;
+    1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1; MODEL_SIZE_GB=16 ;;
+    2) MODEL_ID="Qwen/Qwen3-32B"; MODEL_SIZE_GB=64 ;;
+    3) MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; MODEL_SIZE_GB=38 ;;
     4) read -p "  Enter HuggingFace model ID: " MODEL_ID ;;
     *) echo "Exiting."; exit 0 ;;
 esac
@@ -80,6 +81,38 @@ esac
 if [ -z "$MODEL_ID" ]; then
     echo -e "${RED}No model selected.${NC}"
     exit 1
+fi
+
+# --- Auto-tune GPU memory settings based on model size vs available VRAM ---
+AVAILABLE_VRAM=$((VRAM_GB * PARALLEL))
+
+# Calculate optimal GPU memory utilization and context length
+GPU_MEM_UTIL="0.90"    # Default: 90%
+MAX_CTX=32768          # Default context length
+
+if [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+    # How much of VRAM do weights need? (as percentage)
+    WEIGHT_PCT=$((MODEL_SIZE_GB * 100 / AVAILABLE_VRAM))
+    
+    if [ "$WEIGHT_PCT" -ge 95 ]; then
+        # Model too large even at max utilization
+        echo -e "${RED}⚠ Warning: ${MODEL_ID} (~${MODEL_SIZE_GB} GB) may not fit in ${AVAILABLE_VRAM} GB VRAM.${NC}"
+        echo -e "${YELLOW}  Consider a quantized variant or adding more GPUs.${NC}"
+        GPU_MEM_UTIL="0.97"
+        MAX_CTX=4096
+    elif [ "$WEIGHT_PCT" -ge 85 ]; then
+        # Very tight — max utilization, minimal context
+        GPU_MEM_UTIL="0.95"
+        MAX_CTX=8192
+    elif [ "$WEIGHT_PCT" -ge 70 ]; then
+        # Tight — high utilization, reduced context
+        GPU_MEM_UTIL="0.92"
+        MAX_CTX=16384
+    else
+        # Comfortable fit
+        GPU_MEM_UTIL="0.90"
+        MAX_CTX=32768
+    fi
 fi
 
 # --- Write Config ---
@@ -98,7 +131,10 @@ MODEL_ID=${MODEL_ID}
 GPU_COUNT=${PARALLEL}
 
 # Maximum context length (tokens)
-MAX_CONTEXT=32768
+MAX_CONTEXT=${MAX_CTX}
+
+# GPU memory utilization (0.0-1.0, auto-tuned for ${MODEL_SIZE_GB}GB model on ${AVAILABLE_VRAM}GB VRAM)
+GPU_MEMORY_UTILIZATION=${GPU_MEM_UTIL}
 
 # Cache proxy (optional, for faster model downloads)
 # CACHE_PROXY=http://<ip>:3128
@@ -113,7 +149,8 @@ echo -e "${GREEN}✓ Configuration written to .env${NC}"
 echo ""
 echo "  Model:    $MODEL_ID"
 echo "  GPUs:     $PARALLEL"
-echo "  Context:  32768 tokens"
+echo "  Context:  $MAX_CTX tokens"
+echo "  Memory:   $GPU_MEM_UTIL utilization"
 echo ""
 
 read -p "Start the stack now? (Y/n): " START
