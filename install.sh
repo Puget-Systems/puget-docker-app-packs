@@ -436,22 +436,20 @@ case $FLAVOR in
         echo ""
         # Model Selection
         echo -e "${YELLOW}Select a model to serve:${NC}"
-        echo "  vLLM loads models in full precision (BF16) by default."
-        echo "  Model 3 uses AWQ quantization to fit larger models."
         echo ""
         echo "  1) Qwen 3 (8B)              - Fast, single GPU (~16 GB BF16)"
 
-        if [ "$TOTAL_VRAM" -ge 80 ]; then
-            echo "  2) Qwen 3 (32B)             - Best quality, multi-GPU (~64 GB BF16)"
+        if [ "$TOTAL_VRAM" -ge 40 ]; then
+            echo "  2) Qwen 3 (32B FP8)         - Best quality, near-lossless (~32 GB) [Recommended]"
         else
-            echo -e "  2) Qwen 3 (32B)             - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+            echo -e "  2) Qwen 3 (32B FP8)         - ${RED}Requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
         fi
 
         if [ "$TOTAL_VRAM" -ge 40 ]; then
             if [ "$GPU_COUNT" -gt 1 ]; then
-                echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning, spans ${GPU_COUNT} GPUs (~38 GB) [Recommended]"
+                echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning, spans ${GPU_COUNT} GPUs (~38 GB)"
             else
-                echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning (~38 GB quantized) [Recommended]"
+                echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning (~38 GB quantized)"
             fi
         else
             echo -e "  3) DeepSeek R1 (70B AWQ)    - ${RED}Requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
@@ -467,11 +465,10 @@ case $FLAVOR in
         case $VLLM_MODEL_SELECT in
             1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16 ;;
             2)
-                if [ "$TOTAL_VRAM" -lt 80 ]; then
-                    echo -e "${RED}✗ Qwen 3 32B requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                    echo -e "  Tip: Try DeepSeek R1 70B AWQ (option 3) — quantized to fit in ~38 GB."
+                if [ "$TOTAL_VRAM" -lt 40 ]; then
+                    echo -e "${RED}✗ Qwen 3 32B FP8 requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 else
-                    VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=64
+                    VLLM_MODEL_ID="Qwen/Qwen3-32B-FP8"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=32
                 fi
                 ;;
             3)

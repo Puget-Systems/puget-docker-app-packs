@@ -48,33 +48,26 @@ echo ""
 echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
 
-# vLLM loads models in BF16 by default (2 bytes per parameter)
-# Show each model with fit status
-echo "  vLLM loads models in full precision (BF16) by default."
-echo "  Quantized (AWQ) options are available for larger models."
-echo ""
-
 # 1) Qwen 3 8B — always fits on any modern GPU
 echo "  1) Qwen 3 (8B)              - Fast, single GPU (~16 GB BF16)"
 
-# 2) Qwen 3 32B — needs ~64 GB, only fits on 80+ GB total VRAM
-if [ "$TOTAL_VRAM" -ge 80 ]; then
-    echo "  2) Qwen 3 (32B)             - Best quality, multi-GPU (~64 GB BF16)"
+# 2) Qwen 3 32B FP8 — near-lossless quality, needs ~32 GB
+if [ "$TOTAL_VRAM" -ge 40 ]; then
+    echo "  2) Qwen 3 (32B FP8)         - Best quality, near-lossless (~32 GB) [Recommended]"
 else
-    echo -e "  2) Qwen 3 (32B)             - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    echo -e "  2) Qwen 3 (32B FP8)         - ${RED}Requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
 fi
 
-# 3) DeepSeek R1 70B AWQ — needs ~38 GB
+# 3) DeepSeek R1 70B AWQ — flagship reasoning, needs ~38 GB
 if [ "$TOTAL_VRAM" -ge 40 ]; then
-    echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning (~38 GB quantized) [Recommended]"
+    echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning (~38 GB quantized)"
 else
     echo -e "  3) DeepSeek R1 (70B AWQ)    - ${RED}Requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
 fi
 
-echo "  4) Custom                   - Enter a HuggingFace model ID"
-echo "  5) Exit"
+echo "  4) Skip                     - I'll configure via .env later"
 echo ""
-read -p "Select [1-5]: " CHOICE
+read -p "Select [1-4]: " CHOICE
 
 MODEL_ID=""
 PARALLEL=$GPU_COUNT
@@ -82,12 +75,11 @@ MODEL_SIZE_GB=0  # Approximate weight size in GB for memory planning
 case $CHOICE in
     1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1; MODEL_SIZE_GB=16 ;;
     2)
-        if [ "$TOTAL_VRAM" -lt 80 ]; then
-            echo -e "${RED}✗ Qwen 3 32B requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-            echo -e "  Tip: Try DeepSeek R1 70B AWQ (option 3) — it's quantized to fit in ~38 GB."
+        if [ "$TOTAL_VRAM" -lt 40 ]; then
+            echo -e "${RED}✗ Qwen 3 32B FP8 requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
             exit 1
         fi
-        MODEL_ID="Qwen/Qwen3-32B"; MODEL_SIZE_GB=64
+        MODEL_ID="Qwen/Qwen3-32B-FP8"; MODEL_SIZE_GB=32
         ;;
     3)
         if [ "$TOTAL_VRAM" -lt 40 ]; then
