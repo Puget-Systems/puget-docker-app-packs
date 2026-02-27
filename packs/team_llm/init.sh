@@ -277,8 +277,32 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
                 DETAIL="in progress..."
             fi
         else
-            # No recognizable phase in logs
-            if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
+            # No recognizable phase in logs — check network I/O for silent downloads
+            # Docker/HuggingFace tqdm often doesn't flush to container logs
+            NET_RX=$(docker stats "$CONTAINER_NAME" --no-stream --format '{{.NetIO}}' 2>/dev/null | awk -F'/' '{print $1}' | xargs)
+            # Parse value and unit (e.g. "35.5GB", "500MB", "1.2kB")
+            NET_VAL=$(echo "$NET_RX" | grep -oE '[0-9.]+' | head -1)
+            NET_UNIT=$(echo "$NET_RX" | grep -oE '[A-Za-z]+' | head -1)
+            
+            # Convert to GB for comparison
+            NET_GB=0
+            case "$NET_UNIT" in
+                GB|GiB) NET_GB=$(echo "$NET_VAL" | cut -d. -f1) ;;
+                MB|MiB) NET_GB=0 ;;
+                TB|TiB) NET_GB=$(($(echo "$NET_VAL" | cut -d. -f1) * 1024)) ;;
+            esac
+            
+            if [ "$NET_GB" -gt 0 ] 2>/dev/null && [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+                DL_PCT=$((NET_GB * 100 / MODEL_SIZE_GB))
+                [ "$DL_PCT" -gt 100 ] && DL_PCT=100
+                CANDIDATE_PHASE="Downloading model"
+                CANDIDATE_LEVEL=1
+                DETAIL="${DL_PCT}% (${NET_RX} / ${MODEL_SIZE_GB} GB)"
+            elif [ -n "$NET_VAL" ] && echo "$NET_UNIT" | grep -qiE "MB|MiB" 2>/dev/null; then
+                CANDIDATE_PHASE="Downloading model"
+                CANDIDATE_LEVEL=1
+                DETAIL="${NET_RX}"
+            elif echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
                 CANDIDATE_PHASE="Initializing model"
                 CANDIDATE_LEVEL=0
                 DETAIL=""
