@@ -440,24 +440,47 @@ case $FLAVOR in
         echo "  Model 3 uses AWQ quantization to fit larger models."
         echo ""
         echo "  1) Qwen 3 (8B)              - Fast, single GPU (~16 GB BF16)"
-        if [ "$GPU_COUNT" -gt 1 ]; then
-            echo "  2) Qwen 3 (32B)            - Best quality, spans ${GPU_COUNT} GPUs (~64 GB BF16)"
-            echo "  3) DeepSeek R1 (70B AWQ)   - Flagship reasoning, spans ${GPU_COUNT} GPUs (~38 GB) [Recommended]"
+
+        if [ "$TOTAL_VRAM" -ge 80 ]; then
+            echo "  2) Qwen 3 (32B)             - Best quality, multi-GPU (~64 GB BF16)"
         else
-            echo "  2) Qwen 3 (32B)            - Best quality (~64 GB BF16, needs 64+ GB VRAM)"
-            echo "  3) DeepSeek R1 (70B AWQ)   - Flagship reasoning (~38 GB quantized)"
+            echo -e "  2) Qwen 3 (32B)             - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
         fi
-        echo "  4) Skip                    - I'll configure via .env later"
+
+        if [ "$TOTAL_VRAM" -ge 40 ]; then
+            if [ "$GPU_COUNT" -gt 1 ]; then
+                echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning, spans ${GPU_COUNT} GPUs (~38 GB) [Recommended]"
+            else
+                echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning (~38 GB quantized) [Recommended]"
+            fi
+        else
+            echo -e "  3) DeepSeek R1 (70B AWQ)    - ${RED}Requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        fi
+
+        echo "  4) Skip                     - I'll configure via .env later"
         echo ""
         read -p "Select [1-4]: " VLLM_MODEL_SELECT
         
         VLLM_MODEL_ID=""
         VLLM_GPU_COUNT=1
-        VLLM_MODEL_SIZE_GB=0  # Approximate weight size in GB for memory planning
+        VLLM_MODEL_SIZE_GB=0
         case $VLLM_MODEL_SELECT in
             1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16 ;;
-            2) VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=64 ;;
-            3) VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=38 ;;
+            2)
+                if [ "$TOTAL_VRAM" -lt 80 ]; then
+                    echo -e "${RED}✗ Qwen 3 32B requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                    echo -e "  Tip: Try DeepSeek R1 70B AWQ (option 3) — quantized to fit in ~38 GB."
+                else
+                    VLLM_MODEL_ID="Qwen/Qwen3-32B"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=64
+                fi
+                ;;
+            3)
+                if [ "$TOTAL_VRAM" -lt 40 ]; then
+                    echo -e "${RED}✗ DeepSeek R1 70B AWQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                else
+                    VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=38
+                fi
+                ;;
             *) echo "Skipping model configuration. Edit .env before starting." ;;
         esac
         
@@ -470,12 +493,7 @@ case $FLAVOR in
             if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
                 WEIGHT_PCT=$((VLLM_MODEL_SIZE_GB * 100 / AVAILABLE_VRAM))
                 
-                if [ "$WEIGHT_PCT" -ge 95 ]; then
-                    echo -e "${RED}⚠ Warning: ${VLLM_MODEL_ID} (~${VLLM_MODEL_SIZE_GB} GB) may not fit in ${AVAILABLE_VRAM} GB VRAM.${NC}"
-                    echo -e "${YELLOW}  Consider a quantized variant or adding more GPUs.${NC}"
-                    GPU_MEM_UTIL="0.97"
-                    MAX_CTX=4096
-                elif [ "$WEIGHT_PCT" -ge 85 ]; then
+                if [ "$WEIGHT_PCT" -ge 85 ]; then
                     GPU_MEM_UTIL="0.95"
                     MAX_CTX=8192
                 elif [ "$WEIGHT_PCT" -ge 70 ]; then

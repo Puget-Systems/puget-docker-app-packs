@@ -48,21 +48,30 @@ echo ""
 echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
 
-# Always available
+# vLLM loads models in BF16 by default (2 bytes per parameter)
+# Show each model with fit status
 echo "  vLLM loads models in full precision (BF16) by default."
 echo "  Quantized (AWQ) options are available for larger models."
 echo ""
-echo "  1) Qwen 3 8B            - Fast, single GPU (~16 GB BF16)"
-echo "  2) Qwen 3 32B           - Best quality (~64 GB BF16, needs multi-GPU)"
 
-# Conditional on VRAM
-if [ "$TOTAL_VRAM" -ge 40 ]; then
-    echo "  3) DeepSeek R1 70B AWQ  - Flagship reasoning (~38 GB quantized) [Recommended]"
+# 1) Qwen 3 8B — always fits on any modern GPU
+echo "  1) Qwen 3 (8B)              - Fast, single GPU (~16 GB BF16)"
+
+# 2) Qwen 3 32B — needs ~64 GB, only fits on 80+ GB total VRAM
+if [ "$TOTAL_VRAM" -ge 80 ]; then
+    echo "  2) Qwen 3 (32B)             - Best quality, multi-GPU (~64 GB BF16)"
 else
-    echo -e "  3) DeepSeek R1 70B AWQ  - ${RED}Requires ~38 GB (you have ${TOTAL_VRAM} GB)${NC}"
+    echo -e "  2) Qwen 3 (32B)             - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
 fi
 
-echo "  4) Custom               - Enter a HuggingFace model ID"
+# 3) DeepSeek R1 70B AWQ — needs ~38 GB
+if [ "$TOTAL_VRAM" -ge 40 ]; then
+    echo "  3) DeepSeek R1 (70B AWQ)    - Flagship reasoning (~38 GB quantized) [Recommended]"
+else
+    echo -e "  3) DeepSeek R1 (70B AWQ)    - ${RED}Requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+fi
+
+echo "  4) Custom                   - Enter a HuggingFace model ID"
 echo "  5) Exit"
 echo ""
 read -p "Select [1-5]: " CHOICE
@@ -72,8 +81,21 @@ PARALLEL=$GPU_COUNT
 MODEL_SIZE_GB=0  # Approximate weight size in GB for memory planning
 case $CHOICE in
     1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1; MODEL_SIZE_GB=16 ;;
-    2) MODEL_ID="Qwen/Qwen3-32B"; MODEL_SIZE_GB=64 ;;
-    3) MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; MODEL_SIZE_GB=38 ;;
+    2)
+        if [ "$TOTAL_VRAM" -lt 80 ]; then
+            echo -e "${RED}✗ Qwen 3 32B requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+            echo -e "  Tip: Try DeepSeek R1 70B AWQ (option 3) — it's quantized to fit in ~38 GB."
+            exit 1
+        fi
+        MODEL_ID="Qwen/Qwen3-32B"; MODEL_SIZE_GB=64
+        ;;
+    3)
+        if [ "$TOTAL_VRAM" -lt 40 ]; then
+            echo -e "${RED}✗ DeepSeek R1 70B AWQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+            exit 1
+        fi
+        MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; MODEL_SIZE_GB=38
+        ;;
     4) read -p "  Enter HuggingFace model ID: " MODEL_ID ;;
     *) echo "Exiting."; exit 0 ;;
 esac
@@ -94,14 +116,8 @@ if [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
     # How much of VRAM do weights need? (as percentage)
     WEIGHT_PCT=$((MODEL_SIZE_GB * 100 / AVAILABLE_VRAM))
     
-    if [ "$WEIGHT_PCT" -ge 95 ]; then
-        # Model too large even at max utilization
-        echo -e "${RED}⚠ Warning: ${MODEL_ID} (~${MODEL_SIZE_GB} GB) may not fit in ${AVAILABLE_VRAM} GB VRAM.${NC}"
-        echo -e "${YELLOW}  Consider a quantized variant or adding more GPUs.${NC}"
-        GPU_MEM_UTIL="0.97"
-        MAX_CTX=4096
-    elif [ "$WEIGHT_PCT" -ge 85 ]; then
-        # Very tight — max utilization, minimal context
+    if [ "$WEIGHT_PCT" -ge 85 ]; then
+        # Tight — high utilization, reduced context
         GPU_MEM_UTIL="0.95"
         MAX_CTX=8192
     elif [ "$WEIGHT_PCT" -ge 70 ]; then
