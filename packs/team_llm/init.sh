@@ -100,7 +100,6 @@ case $CHOICE in
     3)
         MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=18
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        EXTRA_ARGS="--quantization awq"
         VLLM_IMAGE="nightly"  # Qwen 3.5 needs bleeding-edge vLLM
         ;;
     4)
@@ -110,7 +109,6 @@ case $CHOICE in
         fi
         MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; MODEL_SIZE_GB=60
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        EXTRA_ARGS="--quantization awq"
         VLLM_IMAGE="nightly"  # Qwen 3.5 needs bleeding-edge vLLM
         ;;
     5)
@@ -120,7 +118,6 @@ case $CHOICE in
         fi
         MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; MODEL_SIZE_GB=38
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        EXTRA_ARGS="--quantization awq"
         ;;
     6) read -p "  Enter HuggingFace model ID: " MODEL_ID ;;
     *) echo "Exiting."; exit 0 ;;
@@ -182,7 +179,7 @@ MAX_CONTEXT=${MAX_CTX}
 GPU_MEMORY_UTILIZATION=${GPU_MEM_UTIL}
 
 # Tool call parser and extra vLLM args (auto-set per model)
-TOOL_CALL_ARGS=${TOOL_CALL_ARGS} ${EXTRA_ARGS}
+TOOL_CALL_ARGS=${TOOL_CALL_ARGS}
 
 # Cache proxy (optional, for faster model downloads)
 # CACHE_PROXY=http://<ip>:3128

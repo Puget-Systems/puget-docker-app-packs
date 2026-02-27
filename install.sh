@@ -484,7 +484,6 @@ case $FLAVOR in
             3)
                 VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=18
                 VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                VLLM_EXTRA_ARGS="--quantization awq"
                 VLLM_IMAGE="nightly"
                 ;;
             4)
@@ -493,7 +492,6 @@ case $FLAVOR in
                 else
                     VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=60
                     VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                    VLLM_EXTRA_ARGS="--quantization awq"
                     VLLM_IMAGE="nightly"
                 fi
                 ;;
@@ -503,7 +501,6 @@ case $FLAVOR in
                 else
                     VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=38
                     VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                    VLLM_EXTRA_ARGS="--quantization awq"
                 fi
                 ;;
             6) read -p "  Enter HuggingFace model ID: " VLLM_MODEL_ID ;;
@@ -536,7 +533,7 @@ case $FLAVOR in
             echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
             echo "MAX_CONTEXT=$MAX_CTX" >> "$INSTALL_DIR/.env"
             echo "GPU_MEMORY_UTILIZATION=$GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
-            echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS $VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
+            echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
             echo -e "  Memory: ${GPU_MEM_UTIL} utilization, ${MAX_CTX} context tokens"
             echo -e "  Tool calls: enabled (hermes parser)"
