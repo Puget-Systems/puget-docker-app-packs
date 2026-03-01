@@ -116,7 +116,7 @@ case $CHOICE in
         REASONING_ARGS="--reasoning-parser qwen3"
         EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
         DTYPE="float16"  # AWQ kernels only support float16, not bfloat16
-        VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
+        VLLM_IMAGE="${NIGHTLY_PREFIX}"  # Latest nightly — needs recent fix for Triton GDN kernel on Blackwell
         ;;
     4)
         if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -128,7 +128,7 @@ case $CHOICE in
         REASONING_ARGS="--reasoning-parser qwen3"
         EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
         DTYPE="float16"  # AWQ kernels only support float16, not bfloat16
-        VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
+        VLLM_IMAGE="${NIGHTLY_PREFIX}"  # Latest nightly — needs recent fix for Triton GDN kernel on Blackwell
         ;;
     5)
         if [ "$TOTAL_VRAM" -lt 40 ]; then
