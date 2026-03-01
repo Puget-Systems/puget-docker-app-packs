@@ -97,6 +97,7 @@ MODEL_SIZE_GB=0      # Approximate weight size in GB for memory planning
 TOOL_CALL_ARGS=""    # vLLM tool call parser args (auto-set per model)
 REASONING_ARGS=""    # vLLM reasoning parser (e.g. --reasoning-parser qwen3)
 EXTRA_VLLM_ARGS=""   # Additional vLLM args (e.g. --language-model-only)
+DTYPE="auto"         # Data type (auto, float16, bfloat16) — AWQ requires float16
 VLLM_IMAGE="latest"  # Docker image tag (nightly for new architectures)
 case $CHOICE in
     1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1; MODEL_SIZE_GB=16
@@ -113,7 +114,8 @@ case $CHOICE in
         MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=18
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
         REASONING_ARGS="--reasoning-parser qwen3"
-        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
+        DTYPE="float16"  # AWQ kernels only support float16, not bfloat16
         VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
         ;;
     4)
@@ -124,7 +126,8 @@ case $CHOICE in
         MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; MODEL_SIZE_GB=60
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
         REASONING_ARGS="--reasoning-parser qwen3"
-        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
+        DTYPE="float16"  # AWQ kernels only support float16, not bfloat16
         VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
         ;;
     5)
@@ -170,6 +173,19 @@ if [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
     fi
 fi
 
+# Qwen 3.5 MoE override: hybrid GDN+attention state uses far more memory per token
+# than pure attention models, plus Triton autotuner needs scratch space on first inference.
+# Cap context even when weights seem to fit "comfortably".
+case "$MODEL_ID" in
+    cyankiwi/Qwen3.5-*)
+        if [ "$MAX_CTX" -gt 8192 ]; then
+            MAX_CTX=8192
+            GPU_MEM_UTIL="0.85"  # Extra headroom for Triton autotuner
+            echo -e "${YELLOW}  Note: Qwen 3.5 MoE context capped to ${MAX_CTX} tokens (hybrid GDN+attention memory)${NC}"
+        fi
+        ;;
+esac
+
 # --- Write Config ---
 echo ""
 echo -e "${YELLOW}[3/3] Writing configuration...${NC}"
@@ -202,6 +218,9 @@ TOOL_CALL_ARGS=${TOOL_CALL_ARGS}
 
 # Extra vLLM args (e.g. --language-model-only for text-only Qwen3.5)
 EXTRA_VLLM_ARGS=${EXTRA_VLLM_ARGS}
+
+# Data type (auto, float16, bfloat16) — AWQ models require float16
+DTYPE=${DTYPE}
 
 # Cache proxy (optional, for faster model downloads)
 # CACHE_PROXY=http://<ip>:3128

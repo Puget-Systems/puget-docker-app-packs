@@ -482,6 +482,7 @@ case $FLAVOR in
         VLLM_TOOL_CALL_ARGS=""
         VLLM_REASONING_ARGS=""
         VLLM_EXTRA_ARGS=""
+        VLLM_DTYPE="auto"
         VLLM_IMAGE="latest"
         case $VLLM_MODEL_SELECT in
             1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16
@@ -498,7 +499,8 @@ case $FLAVOR in
                 VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=18
                 VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
                 VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-                VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+                VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
+                VLLM_DTYPE="float16"
                 VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
                 ;;
             4)
@@ -508,7 +510,8 @@ case $FLAVOR in
                     VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=60
                     VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
                     VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-                    VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+                    VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
+                    VLLM_DTYPE="float16"
                     VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
                 fi
                 ;;
@@ -545,6 +548,17 @@ case $FLAVOR in
                 fi
             fi
             
+            # Qwen 3.5 MoE override: hybrid GDN+attention state uses far more memory
+            # per token than pure attention models, plus Triton autotuner needs scratch space.
+            case "$VLLM_MODEL_ID" in
+                cyankiwi/Qwen3.5-*)
+                    if [ "$MAX_CTX" -gt 8192 ]; then
+                        MAX_CTX=8192
+                        GPU_MEM_UTIL="0.85"
+                    fi
+                    ;;
+            esac
+            
             echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
             echo "VLLM_IMAGE=$VLLM_IMAGE" >> "$INSTALL_DIR/.env"
             echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
@@ -553,6 +567,7 @@ case $FLAVOR in
             echo "REASONING_ARGS=$VLLM_REASONING_ARGS" >> "$INSTALL_DIR/.env"
             echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
             echo "EXTRA_VLLM_ARGS=$VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
+            echo "DTYPE=$VLLM_DTYPE" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
             echo -e "  Memory: ${GPU_MEM_UTIL} utilization, ${MAX_CTX} context tokens"
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
