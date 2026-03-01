@@ -35,7 +35,9 @@ services:
         --dtype=auto
         --trust-remote-code
         --disable-custom-all-reduce
+        ${REASONING_ARGS:-}
         ${TOOL_CALL_ARGS:-}
+        ${EXTRA_VLLM_ARGS:-}
 
   # 2. User Interface (Open WebUI)
   ui:

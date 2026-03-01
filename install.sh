@@ -427,10 +427,22 @@ case $FLAVOR in
             VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
             VRAM_GB=$((VRAM_MB / 1024))
             TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
-            echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+            # Detect compute capability for CUDA version selection
+            # Blackwell (RTX 50xx) = compute_cap 12.0+ → requires cu130 Docker images
+            COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+            COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
+            if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
+                NIGHTLY_PREFIX="cu130-nightly"
+                echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+                echo -e "${GREEN}    Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
+            else
+                NIGHTLY_PREFIX="nightly"
+                echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+            fi
         else
             GPU_COUNT=1
             TOTAL_VRAM=32
+            NIGHTLY_PREFIX="nightly"
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
         fi
         echo ""
@@ -468,6 +480,7 @@ case $FLAVOR in
         VLLM_GPU_COUNT=1
         VLLM_MODEL_SIZE_GB=0
         VLLM_TOOL_CALL_ARGS=""
+        VLLM_REASONING_ARGS=""
         VLLM_EXTRA_ARGS=""
         VLLM_IMAGE="latest"
         case $VLLM_MODEL_SELECT in
@@ -483,16 +496,20 @@ case $FLAVOR in
                 ;;
             3)
                 VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=18
-                VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                VLLM_IMAGE="nightly"
+                VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+                VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+                VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+                VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
                 ;;
             4)
                 if [ "$TOTAL_VRAM" -lt 80 ]; then
                     echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 else
                     VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=60
-                    VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                    VLLM_IMAGE="nightly"
+                    VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+                    VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+                    VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+                    VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
                 fi
                 ;;
             5)
@@ -533,10 +550,13 @@ case $FLAVOR in
             echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
             echo "MAX_CONTEXT=$MAX_CTX" >> "$INSTALL_DIR/.env"
             echo "GPU_MEMORY_UTILIZATION=$GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
+            echo "REASONING_ARGS=$VLLM_REASONING_ARGS" >> "$INSTALL_DIR/.env"
             echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
+            echo "EXTRA_VLLM_ARGS=$VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
             echo -e "  Memory: ${GPU_MEM_UTIL} utilization, ${MAX_CTX} context tokens"
-            echo -e "  Tool calls: enabled (hermes parser)"
+            PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
+            echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
             echo -e "  The model will download on first launch."
         fi
         ;;

@@ -27,7 +27,18 @@ VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | he
 VRAM_GB=$((VRAM_MB / 1024))
 TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
 
-echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+# Detect compute capability for CUDA version selection
+# Blackwell (RTX 50xx) = compute_cap 12.0+ → requires cu130 Docker images
+COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
+if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
+    NIGHTLY_PREFIX="cu130-nightly"
+    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+    echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
+else
+    NIGHTLY_PREFIX="nightly"
+    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+fi
 
 # --- Cache Proxy Status ---
 if [ -f .env ]; then
@@ -82,9 +93,10 @@ read -p "Select [1-7]: " CHOICE
 
 MODEL_ID=""
 PARALLEL=$GPU_COUNT
-MODEL_SIZE_GB=0  # Approximate weight size in GB for memory planning
-TOOL_CALL_ARGS=""  # vLLM tool call parser args (auto-set per model)
-EXTRA_ARGS=""      # Additional vLLM args (e.g. --quantization)
+MODEL_SIZE_GB=0      # Approximate weight size in GB for memory planning
+TOOL_CALL_ARGS=""    # vLLM tool call parser args (auto-set per model)
+REASONING_ARGS=""    # vLLM reasoning parser (e.g. --reasoning-parser qwen3)
+EXTRA_VLLM_ARGS=""   # Additional vLLM args (e.g. --language-model-only)
 VLLM_IMAGE="latest"  # Docker image tag (nightly for new architectures)
 case $CHOICE in
     1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1; MODEL_SIZE_GB=16
@@ -99,8 +111,10 @@ case $CHOICE in
         ;;
     3)
         MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=18
-        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        VLLM_IMAGE="nightly"  # Qwen 3.5 needs bleeding-edge vLLM
+        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+        REASONING_ARGS="--reasoning-parser qwen3"
+        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+        VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
         ;;
     4)
         if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -108,8 +122,10 @@ case $CHOICE in
             exit 1
         fi
         MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; MODEL_SIZE_GB=60
-        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        VLLM_IMAGE="nightly"  # Qwen 3.5 needs bleeding-edge vLLM
+        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+        REASONING_ARGS="--reasoning-parser qwen3"
+        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching --dtype float16"
+        VLLM_IMAGE="${NIGHTLY_PREFIX}-f5d1281c9d1b96cb4f046f1ec2c53a525f319098"  # Pinned Feb 28 nightly (known-good for Qwen 3.5)
         ;;
     5)
         if [ "$TOTAL_VRAM" -lt 40 ]; then
@@ -178,8 +194,14 @@ MAX_CONTEXT=${MAX_CTX}
 # GPU memory utilization (0.0-1.0, auto-tuned for ${MODEL_SIZE_GB}GB model on ${AVAILABLE_VRAM}GB VRAM)
 GPU_MEMORY_UTILIZATION=${GPU_MEM_UTIL}
 
-# Tool call parser and extra vLLM args (auto-set per model)
+# Reasoning parser (e.g. Qwen3.5 thinking mode)
+REASONING_ARGS=${REASONING_ARGS}
+
+# Tool call parser and auto-tool-choice (auto-set per model)
 TOOL_CALL_ARGS=${TOOL_CALL_ARGS}
+
+# Extra vLLM args (e.g. --language-model-only for text-only Qwen3.5)
+EXTRA_VLLM_ARGS=${EXTRA_VLLM_ARGS}
 
 # Cache proxy (optional, for faster model downloads)
 # CACHE_PROXY=http://<ip>:3128
