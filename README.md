@@ -1,15 +1,15 @@
-# Puget Systems Docker App Pack (v0.3.5)
+# Puget Systems Docker App Pack
 
 A standardized, high-performance starter template system for AI and engineering workflows on Puget Systems workstations.
 
 ## Overview
 
-This repository uses an **App Pack** architecture. It provides specialized "Flavors" (Stacks) that serve as reliable foundations for your containerized applications, from basic Python scripts to complex AI Agent Swarms.
+This repository uses an **App Pack** architecture. It provides specialized "Flavors" (Stacks) that serve as reliable foundations for your containerized applications, from basic Python scripts to multi-GPU inference servers.
 
 **Supported Hardware**:
-*   **Standard**: Any x86_64 / ARM64 System (Mac/PC)
-*   **Accelerated**: Puget Systems Workstations with NVIDIA GPUs (CUDA 12.x support)
-*   **High-Performance**: Workstations with 700GB+ VRAM (H100/Instinct) via overrides
+*   **Standard**: Any x86_64 system with Docker
+*   **Accelerated**: NVIDIA GPUs with CUDA 12.6+ (Ada / RTX 4090, etc.)
+*   **Blackwell**: RTX 5090 / RTX PRO 6000 (CUDA 13.0, auto-detected)
 
 ## Available Flavors
 
@@ -20,17 +20,56 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 *   **Best For**: Scripts, Data Processing, Cleaning
 
 ### 2. ComfyUI (Creative)
-*   **Target**: Generative AI & Image Synthesis
-*   **Base**: NVIDIA CUDA 12.4 Runtime (Ubuntu 22.04)
+*   **Target**: Generative AI & Image/Video Synthesis
+*   **Base**: NVIDIA CUDA 12.6 Runtime (Ubuntu 24.04)
 *   **Stack**: ComfyUI (Latest), Manager-Ready
-*   **Persistence**: Auto-maps `./models` and `./output` to host for easy file management.
+*   **Models**: Flux.1 Schnell, LTX-Video 2B, SDXL Base 1.0 (selectable during install)
+*   **Persistence**: Auto-maps `./models`, `./output`, `./input`, `./custom_nodes` to host
 
-### 3. Office Inference (Swarm)
-*   **Target**: Local AI Agents & Chatbots
-*   **Architecture**: Multi-Service Swarm
-    *   **Brain**: **AutoGen** (Microsoft) Agent Container
-    *   **Inference**: **Ollama** (Default) or **vLLM** (High-Performance)
-*   **Networking**: Internal low-latency Docker network (`puget_swarm_net`)
+### 3. Personal LLM
+*   **Target**: Single-User AI Assistant
+*   **Engine**: Ollama (GPU-accelerated, easy model swapping)
+*   **Interface**: Open WebUI (ChatGPT-like)
+*   **Best For**: Personal workstations, one-command model management
+
+### 4. Team LLM
+*   **Target**: Production Multi-User Inference
+*   **Engine**: vLLM (multi-GPU tensor parallelism, OpenAI-compatible API)
+*   **Interface**: Open WebUI
+*   **Models**: Qwen 3 (8B, 32B FP8), Qwen 3.5 MoE (35B, 122B — Coming Soon on Blackwell), DeepSeek R1 70B AWQ
+*   **Best For**: Shared workstations, teams needing a single high-throughput endpoint
+
+---
+
+## Quick Start
+
+### One-Line Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/main/setup.sh -o setup.sh && bash setup.sh
+```
+
+The interactive wizard will:
+1.  Install Docker, NVIDIA drivers, and Container Toolkit (if needed)
+2.  Prompt you to select a Flavor
+3.  Configure GPU settings and model selection (for LLM packs)
+4.  Build and launch the stack
+
+### Manual Install
+
+```bash
+git clone https://github.com/Puget-Systems/puget-docker-app-pack.git
+cd puget-docker-app-pack
+./install.sh
+```
+
+### Develop Branch
+
+For the latest features (not yet released):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/develop/setup.sh -o setup.sh && BRANCH=develop bash setup.sh
+```
 
 ---
 
@@ -46,9 +85,9 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
   ```
 
 ### NVIDIA Drivers (GPU Stacks)
-- **Required for**: ComfyUI, Office Inference
-- **Minimum Version**: 550+
-- Ubuntu: `sudo apt install nvidia-driver-550`
+- **Required for**: ComfyUI, Personal LLM, Team LLM
+- **Ada (RTX 4090)**: `sudo apt install nvidia-driver-550` (driver 550+)
+- **Blackwell (RTX 5090)**: `sudo apt install nvidia-driver-580-open` (open kernel modules required)
 - Verify: `nvidia-smi`
 
 ### NVIDIA Container Toolkit (GPU Stacks)
@@ -57,52 +96,17 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 ---
 
-## Quick Start
-
-### Installation
-
-1.  **One-Line Install (Recommended)**:
-    ```bash
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/main/setup.sh)"
-    ```
-
-2.  **Manual Install**:
-    Clone this repository and run:
-    ```bash
-    ./install.sh
-    ```
-2.  **Select Your Flavor**:
-    The wizard will prompt you to choose the stack that fits your use case.
-3.  **Deploy**:
-    ```bash
-    cd my-new-app
-    docker compose up -d
-    ```
-
-### High-End Hardware Override (700GB+ VRAM)
-To switch the **Office Inference** stack from Ollama to **vLLM** for maximum throughput on H100s, add a `docker-compose.override.yml` to your installed directory:
-
-```yaml
-services:
-  inference:
-    image: vllm/vllm-openai:latest
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-```
-
 ## Repository Structure
 
 ```text
 .
+├── setup.sh               # Bootstrap script (curl-friendly)
 ├── install.sh             # Universal Interactive Installer
 ├── packs/                 # Flavor Templates
 │   ├── docker-base/       # Ubuntu 24.04 LTS Foundation
 │   ├── comfy_ui/          # Creative Stack (CUDA + ComfyUI)
-│   └── office_inference/  # Swarm Stack (AutoGen + Ollama)
+│   ├── personal_llm/      # Personal LLM (Ollama + Open WebUI)
+│   └── team_llm/          # Team LLM (vLLM + Open WebUI)
+├── SOP_AI_PRELOAD_v0.5.0.md  # Puget Systems internal SOP
 └── README.md
 ```

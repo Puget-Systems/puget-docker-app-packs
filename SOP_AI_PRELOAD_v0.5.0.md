@@ -57,4 +57,4 @@ docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi
 - Verify that memory bandwidth and PCIe lane throughput meet the Puget Systems baseline standards for the specific CPU/Motherboard SKU.
 
 ### 3. Auto-Start Check
-If the customer requested an "always-on" stack (like Office Inference), verify the user opted-in to the installer's auto-start prompt, ensuring containers use the `restart: unless-stopped` Docker policy.
+If the customer requested an "always-on" stack (like Team LLM or Personal LLM), verify the user opted-in to the installer's auto-start prompt, ensuring containers use the `restart: unless-stopped` Docker policy.

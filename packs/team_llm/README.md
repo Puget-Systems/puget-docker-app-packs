@@ -25,7 +25,7 @@ Production-grade local LLM server for teams. Multi-GPU tensor parallelism with v
 
 2.  Or configure manually via `.env`:
     ```bash
-    MODEL_ID=Qwen/Qwen3-32B
+    MODEL_ID=Qwen/Qwen3-32B-FP8
     GPU_COUNT=2
     MAX_CONTEXT=32768
     ```
@@ -38,24 +38,43 @@ Production-grade local LLM server for teams. Multi-GPU tensor parallelism with v
 4.  Access the Chat UI: [http://localhost:3000](http://localhost:3000)
 5.  API endpoint: [http://localhost:8000/v1](http://localhost:8000/v1)
 
-## Model Reference
+## Available Models
 
-| Model | HuggingFace ID | VRAM (FP16) | Best For |
-|---|---|---|---|
-| Qwen 3 8B | `Qwen/Qwen3-8B` | ~16 GB | Fast tasks |
-| Qwen 3 32B | `Qwen/Qwen3-32B` | ~64 GB | General quality |
-| DeepSeek R1 70B | `deepseek-ai/DeepSeek-R1-Distill-Llama-70B` | ~140 GB | Reasoning |
-| Llama 4 Scout | `meta-llama/Llama-4-Scout-17B-16E-Instruct` | ~109 GB | Multimodal |
+The `init.sh` wizard offers these pre-configured options:
 
-> **Note**: VRAM above is for FP16. vLLM supports quantization (AWQ, GPTQ) for lower VRAM footprints. Add `--quantization awq` to the compose command if needed.
+| # | Model | HuggingFace ID | VRAM | Notes |
+|---|---|---|---|---|
+| 1 | Qwen 3 (8B) | `Qwen/Qwen3-8B` | ~16 GB | Fast, single GPU |
+| 2 | Qwen 3 (32B FP8) | `Qwen/Qwen3-32B-FP8` | ~32 GB | Near-lossless quality |
+| 3 | Qwen 3.5 (35B MoE AWQ) | `cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit` | ~22 GB | ⚠️ Coming Soon on Blackwell |
+| 4 | Qwen 3.5 (122B MoE AWQ) | `cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit` | ~60 GB | ⚠️ Coming Soon on Blackwell |
+| 5 | DeepSeek R1 (70B AWQ) | `casperhansen/deepseek-r1-distill-llama-70b-awq` | ~38 GB | Reasoning specialist |
+| 6 | Custom | User-specified | Varies | Any HuggingFace model ID |
+
+> **Blackwell Note**: Qwen 3.5 MoE models use Gated DeltaNet (GDN) attention kernels that are not yet supported on RTX 5090 / Blackwell GPUs (`sm_120`). These options appear as "Coming Soon" on Blackwell hardware. Use Qwen 3 32B FP8 instead — it works flawlessly.
+
+## GPU & Architecture Support
+
+| GPU Family | Architecture | CUDA | Docker Image | Status |
+|---|---|---|---|---|
+| RTX 4090 / A6000 | Ada (sm_89) | 12.6 | `vllm/vllm-openai:latest` | ✅ Full support |
+| RTX 5090 / PRO 6000 | Blackwell (sm_120) | 13.0 | `vllm/vllm-openai:cu130-nightly` | ✅ (except Qwen 3.5 MoE) |
+
+The wizard automatically detects your GPU architecture and selects the correct Docker image.
 
 ## Changing Models
 
-Edit `MODEL_ID` in `.env` and restart:
+Run the wizard again:
+
+```bash
+./init.sh
+```
+
+Or edit `.env` manually and restart:
 
 ```bash
 # Edit .env
-MODEL_ID=deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+MODEL_ID=Qwen/Qwen3-32B-FP8
 GPU_COUNT=2
 
 # Restart
@@ -64,7 +83,7 @@ docker compose down && docker compose up -d
 
 ## Advanced: The "Brain" (AutoGen)
 
-Same as Personal LLM, but the brain connects via OpenAI API to vLLM:
+The brain container connects via OpenAI API to vLLM:
 
 ```bash
 docker compose exec brain bash
