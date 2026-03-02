@@ -433,16 +433,19 @@ case $FLAVOR in
             COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
             if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
                 NIGHTLY_PREFIX="cu130-nightly"
+                IS_BLACKWELL=true
                 echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
                 echo -e "${GREEN}    Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
             else
                 NIGHTLY_PREFIX="nightly"
+                IS_BLACKWELL=false
                 echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
             fi
         else
             GPU_COUNT=1
             TOTAL_VRAM=32
             NIGHTLY_PREFIX="nightly"
+            IS_BLACKWELL=false
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
         fi
         echo ""
@@ -457,12 +460,17 @@ case $FLAVOR in
             echo -e "  2) Qwen 3 (32B FP8)           - ${RED}Requires ~40 GB VRAM${NC}"
         fi
 
-        echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
-
-        if [ "$TOTAL_VRAM" -ge 80 ]; then
-            echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
+        DIM='\033[2m'
+        if [ "$IS_BLACKWELL" = true ]; then
+            echo -e "  ${DIM}3) Qwen 3.5 (35B MoE AWQ)     - Coming Soon (Blackwell kernel support pending)${NC}"
+            echo -e "  ${DIM}4) Qwen 3.5 (122B MoE AWQ)    - Coming Soon (Blackwell kernel support pending)${NC}"
         else
-            echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+            echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
+            if [ "$TOTAL_VRAM" -ge 80 ]; then
+                echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
+            else
+                echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+            fi
         fi
 
         if [ "$TOTAL_VRAM" -ge 40 ]; then
@@ -496,14 +504,22 @@ case $FLAVOR in
                 fi
                 ;;
             3)
-                VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=22  # Needs TP: 21.2 GiB actual
+                if [ "$IS_BLACKWELL" = true ]; then
+                    echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
+                    echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
+                fi
+                VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=22
                 VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
                 VLLM_REASONING_ARGS="--reasoning-parser qwen3"
                 VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
                 VLLM_DTYPE="float16"
-                VLLM_IMAGE="${NIGHTLY_PREFIX}"  # Latest nightly — needs recent fix for Triton GDN kernel on Blackwell
+                VLLM_IMAGE="${NIGHTLY_PREFIX}"
                 ;;
             4)
+                if [ "$IS_BLACKWELL" = true ]; then
+                    echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
+                    echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
+                fi
                 if [ "$TOTAL_VRAM" -lt 80 ]; then
                     echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 else
@@ -512,7 +528,7 @@ case $FLAVOR in
                     VLLM_REASONING_ARGS="--reasoning-parser qwen3"
                     VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
                     VLLM_DTYPE="float16"
-                    VLLM_IMAGE="${NIGHTLY_PREFIX}"  # Latest nightly — needs recent fix for Triton GDN kernel on Blackwell
+                    VLLM_IMAGE="${NIGHTLY_PREFIX}"
                 fi
                 ;;
             5)

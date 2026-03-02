@@ -33,10 +33,12 @@ COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1
 COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
 if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
     NIGHTLY_PREFIX="cu130-nightly"
+    IS_BLACKWELL=true
     echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
     echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
 else
     NIGHTLY_PREFIX="nightly"
+    IS_BLACKWELL=false
     echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
 fi
 
@@ -70,13 +72,19 @@ else
 fi
 
 # 3) Qwen 3.5 35B MoE AWQ — tiny active params, fits almost anywhere
-echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
-
 # 4) Qwen 3.5 122B MoE AWQ — flagship MoE, needs ~60 GB
-if [ "$TOTAL_VRAM" -ge 80 ]; then
-    echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
+# Note: Qwen 3.5 MoE uses GDN attention kernels that are not yet compatible with Blackwell GPUs
+DIM='\033[2m'  # dim text
+if [ "$IS_BLACKWELL" = true ]; then
+    echo -e "  ${DIM}3) Qwen 3.5 (35B MoE AWQ)     - Coming Soon (Blackwell kernel support pending)${NC}"
+    echo -e "  ${DIM}4) Qwen 3.5 (122B MoE AWQ)    - Coming Soon (Blackwell kernel support pending)${NC}"
 else
-    echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
+    if [ "$TOTAL_VRAM" -ge 80 ]; then
+        echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
+    else
+        echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
 fi
 
 # 5) DeepSeek R1 70B AWQ — reasoning specialist
@@ -111,14 +119,24 @@ case $CHOICE in
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
         ;;
     3)
-        MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=22; PARALLEL=$GPU_COUNT  # Needs TP: model loads at 21.2 GiB, Triton autotuner OOMs on single GPU
+        if [ "$IS_BLACKWELL" = true ]; then
+            echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
+            echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
+            exit 1
+        fi
+        MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=22; PARALLEL=$GPU_COUNT
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
         REASONING_ARGS="--reasoning-parser qwen3"
         EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
-        DTYPE="float16"  # AWQ kernels only support float16, not bfloat16
-        VLLM_IMAGE="${NIGHTLY_PREFIX}"  # Latest nightly — needs recent fix for Triton GDN kernel on Blackwell
+        DTYPE="float16"
+        VLLM_IMAGE="${NIGHTLY_PREFIX}"
         ;;
     4)
+        if [ "$IS_BLACKWELL" = true ]; then
+            echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
+            echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
+            exit 1
+        fi
         if [ "$TOTAL_VRAM" -lt 80 ]; then
             echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
             exit 1
@@ -127,8 +145,8 @@ case $CHOICE in
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
         REASONING_ARGS="--reasoning-parser qwen3"
         EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
-        DTYPE="float16"  # AWQ kernels only support float16, not bfloat16
-        VLLM_IMAGE="${NIGHTLY_PREFIX}"  # Latest nightly — needs recent fix for Triton GDN kernel on Blackwell
+        DTYPE="float16"
+        VLLM_IMAGE="${NIGHTLY_PREFIX}"
         ;;
     5)
         if [ "$TOTAL_VRAM" -lt 40 ]; then
