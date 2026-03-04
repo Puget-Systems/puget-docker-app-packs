@@ -377,7 +377,7 @@ case $FLAVOR in
 
         echo -e "  ${BLUE}── Pro Image (Extreme detail, production quality) ──${NC}"
         if [ "$COMFY_VRAM" -ge 16 ]; then
-            echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~50 GB total)"
+            echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~69 GB total)"
         else
             echo -e "  1) Flux.2 Dev (FP8)            - ${RED}Requires ~16 GB VRAM${NC}"
         fi
@@ -427,7 +427,8 @@ case $FLAVOR in
                 COMFY_TEMPLATE_HINT="Flux.2 Dev"
                 COMFY_EXTRA_DOWNLOADS=(
                     "$INSTALL_DIR/models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
-                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/mistral_3_small_flux2_fp8.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/mistral_3_small_flux2_bf16.safetensors"
+                    "$INSTALL_DIR/models/loras|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/loras/Flux_2-Turbo-LoRA_comfyui.safetensors"
                 )
                 ;;
             2)

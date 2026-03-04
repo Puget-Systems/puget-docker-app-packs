@@ -57,7 +57,7 @@ echo -e "  ${BLUE}── Pro Image (Extreme detail, production quality) ──${
 
 # 1) Flux.2 Dev — flagship, gated, ~24 GB (FP8 mixed ~12 GB)
 if [ "$TOTAL_VRAM" -ge 16 ]; then
-    echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~50 GB total)"
+    echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~69 GB total)"
 else
     echo -e "  1) Flux.2 Dev (FP8)            - ${RED}Requires ~16 GB VRAM${NC}"
 fi
@@ -138,7 +138,8 @@ case $CHOICE in
         TEMPLATE_HINT="Flux.2 Dev"
         EXTRA_DOWNLOADS=(
             "models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
-            "models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/mistral_3_small_flux2_fp8.safetensors"
+            "models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/mistral_3_small_flux2_bf16.safetensors"
+            "models/loras|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/loras/Flux_2-Turbo-LoRA_comfyui.safetensors"
         )
         ;;
     2)
