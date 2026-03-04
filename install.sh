@@ -377,7 +377,7 @@ case $FLAVOR in
 
         echo -e "  ${BLUE}── Pro Image (Extreme detail, production quality) ──${NC}"
         if [ "$COMFY_VRAM" -ge 16 ]; then
-            echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~12 GB)"
+            echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~33 GB)"
         else
             echo -e "  1) Flux.2 Dev (FP8)            - ${RED}Requires ~16 GB VRAM${NC}"
         fi
@@ -419,15 +419,8 @@ case $FLAVOR in
         case $COMFY_MODEL_CHOICE in
             1)
                 COMFY_MODEL_NAME="Flux.2 Dev (FP8)"
-                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.2-dev/resolve/main/flux2_dev_fp8mixed.safetensors"
-                echo ""
-                echo -e "${YELLOW}⚠ Flux.2 Dev is a gated model on HuggingFace.${NC}"
-                echo "  Accept the license at: https://huggingface.co/black-forest-labs/FLUX.2-dev"
-                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
-                if [ -z "$COMFY_HF_TOKEN" ]; then
-                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
-                    COMFY_MODEL_URL=""
-                fi
+                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
+                COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
                 ;;
             2)
                 COMFY_MODEL_NAME="Flux.1 Dev"
@@ -443,7 +436,7 @@ case $FLAVOR in
                 ;;
             3)
                 COMFY_MODEL_NAME="HiDream I1 Dev (FP8)"
-                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/hidream_i1_dev_fp8.safetensors"
+                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/diffusion_models/hidream_i1_dev_fp8.safetensors"
                 COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
                 ;;
             4)
@@ -453,6 +446,14 @@ case $FLAVOR in
             5)
                 COMFY_MODEL_NAME="Flux.1 Schnell"
                 COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ Flux.1 Schnell is gated on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
                 ;;
             6)
                 COMFY_MODEL_NAME="SDXL Turbo (FP16)"
@@ -461,6 +462,14 @@ case $FLAVOR in
             7)
                 COMFY_MODEL_NAME="SD 3.5 Medium"
                 COMFY_MODEL_URL="https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ SD 3.5 Medium is gated on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/stabilityai/stable-diffusion-3.5-medium"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
                 ;;
             8)
                 COMFY_MODEL_NAME="LTX-Video 2B"

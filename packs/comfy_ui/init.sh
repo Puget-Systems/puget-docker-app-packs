@@ -57,7 +57,7 @@ echo -e "  ${BLUE}── Pro Image (Extreme detail, production quality) ──${
 
 # 1) Flux.2 Dev — flagship, gated, ~24 GB (FP8 mixed ~12 GB)
 if [ "$TOTAL_VRAM" -ge 16 ]; then
-    echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~12 GB)"
+    echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~33 GB)"
 else
     echo -e "  1) Flux.2 Dev (FP8)            - ${RED}Requires ~16 GB VRAM${NC}"
 fi
@@ -128,21 +128,9 @@ EXTRA_DOWNLOADS=()                # Additional files needed (VAE, CLIP, etc.)
 case $CHOICE in
     1)
         MODEL_NAME="Flux.2 Dev (FP8 Mixed)"
-        MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.2-dev/resolve/main/flux2_dev_fp8mixed.safetensors"
-        MODEL_SIZE_GB=12
-        # Flux.2 Dev is gated — user needs HF account + license agreement
-        echo ""
-        echo -e "${YELLOW}⚠ Flux.2 Dev is a gated model on HuggingFace.${NC}"
-        echo "  You must accept the license at:"
-        echo -e "  ${BLUE}https://huggingface.co/black-forest-labs/FLUX.2-dev${NC}"
-        echo ""
-        echo "  You will also need a HuggingFace token for download."
-        read -p "  Enter your HuggingFace token (or press Enter to skip): " HF_TOKEN
-        if [ -z "$HF_TOKEN" ]; then
-            echo -e "${RED}✗ Download skipped (no token provided).${NC}"
-            echo "  Download manually or use ComfyUI Manager after launching."
-            MODEL_URL=""
-        fi
+        MODEL_URL="https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
+        MODEL_DIR="models/diffusion_models"
+        MODEL_SIZE_GB=33
         ;;
     2)
         MODEL_NAME="Flux.1 Dev"
@@ -163,7 +151,7 @@ case $CHOICE in
         ;;
     3)
         MODEL_NAME="HiDream I1 Dev (FP8)"
-        MODEL_URL="https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/hidream_i1_dev_fp8.safetensors"
+        MODEL_URL="https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/diffusion_models/hidream_i1_dev_fp8.safetensors"
         MODEL_DIR="models/diffusion_models"
         MODEL_SIZE_GB=12
         ;;
@@ -176,6 +164,15 @@ case $CHOICE in
         MODEL_NAME="Flux.1 Schnell"
         MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
         MODEL_SIZE_GB=12
+        echo ""
+        echo -e "${YELLOW}⚠ Flux.1 Schnell is gated on HuggingFace.${NC}"
+        echo "  Accept the license at:"
+        echo -e "  ${BLUE}https://huggingface.co/black-forest-labs/FLUX.1-schnell${NC}"
+        read -p "  Enter your HuggingFace token (or press Enter to skip): " HF_TOKEN
+        if [ -z "$HF_TOKEN" ]; then
+            echo -e "${RED}✗ Download skipped (no token provided).${NC}"
+            MODEL_URL=""
+        fi
         ;;
     6)
         MODEL_NAME="SDXL Turbo (FP16)"
@@ -186,6 +183,15 @@ case $CHOICE in
         MODEL_NAME="SD 3.5 Medium"
         MODEL_URL="https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"
         MODEL_SIZE_GB=5
+        echo ""
+        echo -e "${YELLOW}⚠ SD 3.5 Medium is gated on HuggingFace.${NC}"
+        echo "  Accept the license at:"
+        echo -e "  ${BLUE}https://huggingface.co/stabilityai/stable-diffusion-3.5-medium${NC}"
+        read -p "  Enter your HuggingFace token (or press Enter to skip): " HF_TOKEN
+        if [ -z "$HF_TOKEN" ]; then
+            echo -e "${RED}✗ Download skipped (no token provided).${NC}"
+            MODEL_URL=""
+        fi
         ;;
     8)
         MODEL_NAME="LTX-Video 2B"
