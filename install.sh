@@ -340,7 +340,7 @@ case $FLAVOR in
         # Create required directories with write permissions
         # This prevents Docker from creating them as root and ensures the container user can write
         echo -e "${BLUE}Ensuring data directories exist and are writable...${NC}"
-        COMFY_DIRS=("models" "models/checkpoints" "output" "input" "temp" "custom_nodes")
+        COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "output" "input" "temp" "custom_nodes")
         for dir in "${COMFY_DIRS[@]}"; do
             target="$INSTALL_DIR/$dir"
             if [ ! -d "$target" ]; then
@@ -350,45 +350,147 @@ case $FLAVOR in
             chmod 777 "$target"
         done
 
+        # GPU Detection for VRAM gating
         echo ""
-        echo "Select a Creative Stack for your workflow:"
-        echo "  1) Pro Image  (Flux.1 Schnell ~12GB) - SOTA Image Generation"
-        echo "  2) Pro Video  (LTX-Video 2B   ~4GB)  - Best Open Source Video Model"
-        echo "  3) Standard   (SDXL Base 1.0  ~6GB)  - Reliable, Broad Compatibility"
-        echo "  4) Skip       - I'll download models myself"
+        echo -e "${YELLOW}GPU Configuration:${NC}"
+        COMFY_VRAM=0
+        if command -v nvidia-smi &> /dev/null; then
+            COMFY_GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
+            COMFY_GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+            COMFY_VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+            COMFY_VRAM=$((COMFY_VRAM_MB / 1024))
+            COMFY_TOTAL_VRAM=$((COMFY_VRAM * COMFY_GPU_COUNT))
+            COMFY_COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+            echo -e "${GREEN}  ✓ Found ${COMFY_GPU_COUNT}x ${COMFY_GPU_NAME} (${COMFY_VRAM} GB each, ${COMFY_TOTAL_VRAM} GB total)${NC}"
+        else
+            COMFY_VRAM=0
+            COMFY_TOTAL_VRAM=0
+            echo -e "${YELLOW}  ⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
+        fi
+
         echo ""
-        read -p "Select a stack [1-4]: " STACK_CHOICE
-        
-        case $STACK_CHOICE in
+        echo "Select a model for your workflow. More models are available inside"
+        echo "ComfyUI via the Manager extension and built-in templates."
+        echo ""
+
+        DIM='\033[2m'
+
+        echo -e "  ${BLUE}── Pro Image (Extreme detail, production quality) ──${NC}"
+        if [ "$COMFY_VRAM" -ge 16 ]; then
+            echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~12 GB)"
+        else
+            echo -e "  1) Flux.2 Dev (FP8)            - ${RED}Requires ~16 GB VRAM${NC}"
+        fi
+        if [ "$COMFY_VRAM" -ge 16 ]; then
+            echo "  2) Flux.1 Dev                  - Previous gen flagship (~12 GB)"
+        else
+            echo -e "  2) Flux.1 Dev                  - ${RED}Requires ~16 GB VRAM${NC}"
+        fi
+        if [ "$COMFY_VRAM" -ge 16 ]; then
+            echo "  3) HiDream I1 Dev (FP8)        - 17B param, high detail (~12 GB)"
+        else
+            echo -e "  3) HiDream I1 Dev (FP8)        - ${RED}Requires ~16 GB VRAM${NC}"
+        fi
+        echo ""
+
+        echo -e "  ${BLUE}── Standard Image (Fast iterations, good quality) ──${NC}"
+        echo "  4) Flux.2 Klein (4B)           - 1-2s on 50-series (~8 GB) [Recommended]"
+        echo "  5) Flux.1 Schnell              - Fast Flux generation (~12 GB)"
+        echo "  6) SDXL Turbo (FP16)           - Fastest SDXL, real-time (~3 GB)"
+        echo "  7) SD 3.5 Medium               - Latest SD3 arch (~5 GB)"
+        echo ""
+
+        echo -e "  ${BLUE}── Pro Video ──${NC}"
+        echo "  8) LTX-Video 2B                - Best open-source video (~4 GB)"
+        echo ""
+
+        echo "  9) Skip                        - Download via ComfyUI Manager"
+        echo ""
+        echo -e "  ${DIM}Tip: Additional models (Anima Anime, Capybara, Kandinsky, OmniGen2,${NC}"
+        echo -e "  ${DIM}Ovis, Qwen Image, Z-Image, etc.) available via ComfyUI templates.${NC}"
+        echo ""
+        read -p "Select [1-9]: " COMFY_MODEL_CHOICE
+
+        COMFY_MODEL_NAME=""
+        COMFY_MODEL_URL=""
+        COMFY_MODEL_DIR="$INSTALL_DIR/models/checkpoints"
+        COMFY_HF_TOKEN=""
+
+        case $COMFY_MODEL_CHOICE in
             1)
-                echo -e "${BLUE}Downloading Flux.1 Schnell (Pro Image Stack)...${NC}"
-                mkdir -p "$INSTALL_DIR/models/checkpoints"
-                wget -q --show-progress -P "$INSTALL_DIR/models/checkpoints/" \
-                    "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
-                echo -e "${GREEN}✓ Flux.1 Schnell downloaded.${NC}"
+                COMFY_MODEL_NAME="Flux.2 Dev (FP8)"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.2-dev/resolve/main/flux2_dev_fp8mixed.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ Flux.2 Dev is a gated model on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/black-forest-labs/FLUX.2-dev"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
                 ;;
             2)
-                echo -e "${BLUE}Downloading LTX-Video 2B (Pro Video Stack)...${NC}"
-                mkdir -p "$INSTALL_DIR/models/checkpoints"
-                wget -q --show-progress -P "$INSTALL_DIR/models/checkpoints/" \
-                    "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors"
-                echo -e "${GREEN}✓ LTX-Video downloaded.${NC}"
-                echo -e "${YELLOW}Note: You will need to install 'ComfyUI-LTXVideo' custom nodes via ComfyUI Manager.${NC}"
+                COMFY_MODEL_NAME="Flux.1 Dev"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ Flux.1 Dev is a gated model on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-dev"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
                 ;;
             3)
-                echo -e "${BLUE}Downloading SDXL Base 1.0 (Standard Stack)...${NC}"
-                mkdir -p "$INSTALL_DIR/models/checkpoints"
-                wget -q --show-progress -P "$INSTALL_DIR/models/checkpoints/" \
-                    "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-                echo -e "${GREEN}✓ SDXL Base 1.0 downloaded.${NC}"
+                COMFY_MODEL_NAME="HiDream I1 Dev (FP8)"
+                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/hidream_i1_dev_fp8.safetensors"
+                COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
+                ;;
+            4)
+                COMFY_MODEL_NAME="Flux.2 Klein (4B)"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/flux-2-klein-4b.safetensors"
+                ;;
+            5)
+                COMFY_MODEL_NAME="Flux.1 Schnell"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
+                ;;
+            6)
+                COMFY_MODEL_NAME="SDXL Turbo (FP16)"
+                COMFY_MODEL_URL="https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors"
+                ;;
+            7)
+                COMFY_MODEL_NAME="SD 3.5 Medium"
+                COMFY_MODEL_URL="https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"
+                ;;
+            8)
+                COMFY_MODEL_NAME="LTX-Video 2B"
+                COMFY_MODEL_URL="https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors"
+                echo -e "${YELLOW}Note: Install 'ComfyUI-LTXVideo' custom nodes via ComfyUI Manager after launch.${NC}"
                 ;;
             *)
                 echo "Skipping model download."
-                echo -e "You can download models later to: ${BLUE}$INSTALL_DIR/models/checkpoints/${NC}"
+                echo -e "You can download models from within ComfyUI using the ${BLUE}Manager${NC} extension."
                 ;;
         esac
+
+        if [ -n "$COMFY_MODEL_URL" ]; then
+            mkdir -p "$COMFY_MODEL_DIR"
+            echo -e "${BLUE}Downloading ${COMFY_MODEL_NAME}...${NC}"
+            COMFY_WGET_ARGS="-q --show-progress"
+            if [ -n "$COMFY_HF_TOKEN" ]; then
+                COMFY_WGET_ARGS="$COMFY_WGET_ARGS --header=Authorization:\ Bearer\ ${COMFY_HF_TOKEN}"
+            fi
+            wget $COMFY_WGET_ARGS -P "$COMFY_MODEL_DIR/" "$COMFY_MODEL_URL"
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}✓ ${COMFY_MODEL_NAME} downloaded.${NC}"
+            else
+                echo -e "${RED}✗ Download failed. You can retry from within ComfyUI Manager.${NC}"
+            fi
+        fi
+
         echo ""
         echo -e "After starting, access ComfyUI at: ${BLUE}http://localhost:8188${NC}"
+        echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to download additional models."
         ;;
     personal_llm)
         echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"

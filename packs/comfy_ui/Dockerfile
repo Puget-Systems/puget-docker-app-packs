@@ -1,6 +1,10 @@
 # Base Image: NVIDIA CUDA Runtime (Ubuntu 24.04 base)
 # CUDA 12.6 supports both Ada (RTX 4090, driver 550+) and Blackwell (RTX 5090, driver 560+)
-FROM nvidia/cuda:12.6.0-runtime-ubuntu24.04
+ARG CUDA_VERSION=12.6.0
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
+
+# PyTorch index URL (cu126 works on both Ada and Blackwell)
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -33,7 +37,7 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python Requirements
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url ${TORCH_INDEX_URL}
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install 3D node dependencies (fixes nodes_load_3d.py import errors)

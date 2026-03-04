@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - CUDA_VERSION=${CUDA_VERSION:-12.6.0}
+        - TORCH_INDEX_URL=${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
     container_name: puget_comfy_ui
     restart: unless-stopped
     
@@ -14,6 +17,9 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+    # Shared memory for PyTorch (large model loading)
+    ipc: host
 
     # Increase limits for PyTorch
     ulimits:
@@ -27,7 +33,6 @@ services:
     # Volume Mounts for Persistence
     volumes:
       # Mount models from host (avoid downloading 10GB+ every rebuild)
-      # User must populate ./models locally
       - ./models:/home/puget-app-pack/app/models
       
       # Mount outputs for easy access
