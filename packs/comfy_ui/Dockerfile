@@ -1,10 +1,11 @@
 # Base Image: NVIDIA CUDA Runtime (Ubuntu 24.04 base)
-# CUDA 12.6 supports both Ada (RTX 4090, driver 550+) and Blackwell (RTX 5090, driver 560+)
-ARG CUDA_VERSION=12.6.0
+# CUDA 12.8 is the first version with native Blackwell (sm_120 / RTX 5090) support
+# Also supports Ada (RTX 4090) and older architectures
+ARG CUDA_VERSION=12.8.0
 FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
 
-# PyTorch index URL (cu126 works on both Ada and Blackwell)
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
+# PyTorch index URL (cu128 supports both Ada and Blackwell natively)
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive

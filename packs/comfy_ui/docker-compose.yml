@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - CUDA_VERSION=${CUDA_VERSION:-12.6.0}
-        - TORCH_INDEX_URL=${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+        - CUDA_VERSION=${CUDA_VERSION:-12.8.0}
+        - TORCH_INDEX_URL=${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
     container_name: puget_comfy_ui
     restart: unless-stopped
     
