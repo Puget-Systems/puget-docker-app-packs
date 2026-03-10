@@ -815,12 +815,12 @@
           "links": null
         }
       ],
-      "title": "Load Puget Logo (White)",
+      "title": "Load Puget Logo (Color)",
       "properties": {
         "Node name for S&R": "LoadImage"
       },
       "widgets_values": [
-        "puget-logo-white.png",
+        "puget-logo-color.png",
         "image"
       ]
     },
