@@ -41,7 +41,9 @@
           "localized_name": "MODEL",
           "name": "MODEL",
           "type": "MODEL",
-          "links": null
+          "links": [
+            1
+          ]
         }
       ],
       "title": "Stage 1: Z-Image Turbo Model",
@@ -102,7 +104,10 @@
           "localized_name": "CLIP",
           "name": "CLIP",
           "type": "CLIP",
-          "links": null
+          "links": [
+            2,
+            3
+          ]
         }
       ],
       "title": "Z-Image Text Encoder (Qwen 3 4B)",
@@ -145,7 +150,9 @@
           "localized_name": "VAE",
           "name": "VAE",
           "type": "VAE",
-          "links": null
+          "links": [
+            7
+          ]
         }
       ],
       "title": "Z-Image VAE",
@@ -184,7 +191,7 @@
           "widget": {
             "name": "text"
           },
-          "link": null
+          "link": 2
         }
       ],
       "outputs": [
@@ -192,7 +199,9 @@
           "localized_name": "CONDITIONING",
           "name": "CONDITIONING",
           "type": "CONDITIONING",
-          "links": null
+          "links": [
+            4
+          ]
         }
       ],
       "title": "Product Description Prompt",
@@ -231,7 +240,7 @@
           "widget": {
             "name": "text"
           },
-          "link": null
+          "link": 3
         }
       ],
       "outputs": [
@@ -239,7 +248,9 @@
           "localized_name": "CONDITIONING",
           "name": "CONDITIONING",
           "type": "CONDITIONING",
-          "links": null
+          "links": [
+            5
+          ]
         }
       ],
       "title": "Negative Prompt",
@@ -298,7 +309,9 @@
           "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
-          "links": null
+          "links": [
+            6
+          ]
         }
       ],
       "title": "Image Size (1280x720)",
@@ -330,25 +343,25 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": null
+          "link": 1
         },
         {
           "localized_name": "positive",
           "name": "positive",
           "type": "CONDITIONING",
-          "link": null
+          "link": 4
         },
         {
           "localized_name": "negative",
           "name": "negative",
           "type": "CONDITIONING",
-          "link": null
+          "link": 5
         },
         {
           "localized_name": "latent_image",
           "name": "latent_image",
           "type": "LATENT",
-          "link": null
+          "link": 6
         },
         {
           "localized_name": "seed",
@@ -410,7 +423,9 @@
           "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
-          "links": null
+          "links": [
+            8
+          ]
         }
       ],
       "title": "Stage 1: Z-Image Sampler (4 steps)",
@@ -446,13 +461,13 @@
           "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
-          "link": null
+          "link": 8
         },
         {
           "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
-          "link": null
+          "link": 7
         }
       ],
       "outputs": [
@@ -460,7 +475,9 @@
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": null
+          "links": [
+            9
+          ]
         }
       ],
       "title": "Decode Base Image",
@@ -488,7 +505,7 @@
           "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
-          "link": null
+          "link": 9
         },
         {
           "localized_name": "filename_prefix",
@@ -548,7 +565,9 @@
           "localized_name": "MODEL",
           "name": "MODEL",
           "type": "MODEL",
-          "links": null
+          "links": [
+            10
+          ]
         }
       ],
       "title": "Stage 2: Flux.2 Dev Model (Inpaint)",
@@ -618,7 +637,10 @@
           "localized_name": "CLIP",
           "name": "CLIP",
           "type": "CLIP",
-          "links": null
+          "links": [
+            11,
+            12
+          ]
         }
       ],
       "title": "Flux.2 Text Encoder (Mistral FP8)",
@@ -662,7 +684,10 @@
           "localized_name": "VAE",
           "name": "VAE",
           "type": "VAE",
-          "links": null
+          "links": [
+            16,
+            21
+          ]
         }
       ],
       "title": "Flux.2 VAE",
@@ -701,7 +726,7 @@
           "widget": {
             "name": "text"
           },
-          "link": null
+          "link": 11
         }
       ],
       "outputs": [
@@ -709,7 +734,9 @@
           "localized_name": "CONDITIONING",
           "name": "CONDITIONING",
           "type": "CONDITIONING",
-          "links": null
+          "links": [
+            13
+          ]
         }
       ],
       "title": "Logo Inpaint Prompt",
@@ -748,7 +775,7 @@
           "widget": {
             "name": "text"
           },
-          "link": null
+          "link": 12
         }
       ],
       "outputs": [
@@ -756,7 +783,9 @@
           "localized_name": "CONDITIONING",
           "name": "CONDITIONING",
           "type": "CONDITIONING",
-          "links": null
+          "links": [
+            14
+          ]
         }
       ],
       "title": "Inpaint Negative",
@@ -806,13 +835,17 @@
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": null
+          "links": [
+            15
+          ]
         },
         {
           "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
-          "links": null
+          "links": [
+            18
+          ]
         }
       ],
       "title": "Load Puget Logo (Color)",
@@ -843,13 +876,13 @@
           "localized_name": "pixels",
           "name": "pixels",
           "type": "IMAGE",
-          "link": null
+          "link": 15
         },
         {
           "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
-          "link": null
+          "link": 16
         }
       ],
       "outputs": [
@@ -857,7 +890,9 @@
           "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
-          "links": null
+          "links": [
+            17
+          ]
         }
       ],
       "title": "Encode for Inpainting",
@@ -885,13 +920,13 @@
           "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
-          "link": null
+          "link": 17
         },
         {
           "localized_name": "mask",
           "name": "mask",
           "type": "MASK",
-          "link": null
+          "link": 18
         }
       ],
       "outputs": [
@@ -899,7 +934,9 @@
           "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
-          "links": null
+          "links": [
+            19
+          ]
         }
       ],
       "title": "Apply Inpaint Mask",
@@ -927,25 +964,25 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": null
+          "link": 10
         },
         {
           "localized_name": "positive",
           "name": "positive",
           "type": "CONDITIONING",
-          "link": null
+          "link": 13
         },
         {
           "localized_name": "negative",
           "name": "negative",
           "type": "CONDITIONING",
-          "link": null
+          "link": 14
         },
         {
           "localized_name": "latent_image",
           "name": "latent_image",
           "type": "LATENT",
-          "link": null
+          "link": 19
         },
         {
           "localized_name": "seed",
@@ -1007,7 +1044,9 @@
           "localized_name": "LATENT",
           "name": "LATENT",
           "type": "LATENT",
-          "links": null
+          "links": [
+            20
+          ]
         }
       ],
       "title": "Stage 2: Flux.2 Inpaint Sampler",
@@ -1043,13 +1082,13 @@
           "localized_name": "samples",
           "name": "samples",
           "type": "LATENT",
-          "link": null
+          "link": 20
         },
         {
           "localized_name": "vae",
           "name": "vae",
           "type": "VAE",
-          "link": null
+          "link": 21
         }
       ],
       "outputs": [
@@ -1057,7 +1096,9 @@
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": null
+          "links": [
+            22
+          ]
         }
       ],
       "title": "Decode Final Image",
@@ -1085,7 +1126,7 @@
           "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
-          "link": null
+          "link": 22
         },
         {
           "localized_name": "filename_prefix",
