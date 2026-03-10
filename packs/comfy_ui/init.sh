@@ -53,6 +53,14 @@ echo -e "${BLUE}============================================================${NC
 echo -e "${BLUE}   Puget Systems — ComfyUI Creative AI Setup${NC}"
 echo -e "${BLUE}============================================================${NC}"
 
+# --- ComfyUI Manager (auto-install on first run) ---
+if [ ! -d "custom_nodes/ComfyUI-Manager" ]; then
+    echo ""
+    echo -e "${BLUE}Installing ComfyUI Manager (server-side model & node management)...${NC}"
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git custom_nodes/ComfyUI-Manager
+    echo -e "${GREEN}✓ ComfyUI Manager installed.${NC}"
+fi
+
 # --- GPU Detection ---
 echo ""
 echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
@@ -149,33 +157,18 @@ echo "  9) LTX-Video 2B                - Best open-source video (~4 GB)"
 echo ""
 
 # ═══════════════════════════════════════════════════════════
-# Workflows (Multi-Model) — chained pipelines for production use
-# ═══════════════════════════════════════════════════════════
-echo -e "  ${BLUE}── Workflows (Multi-Model) ──${NC}"
-if [ "$GPU_COUNT" -ge 2 ]; then
-    echo " 10) Branded Product Shot        - Z-Image + Flux.2 inpaint (~73 GB) [Recommended]"
-    echo -e "  ${DIM}    Generate hero image → inpaint your logo with ControlNet${NC}"
-elif [ "$VRAM_GB" -ge 24 ]; then
-    echo " 10) Branded Product Shot        - Z-Image + Flux.2 inpaint (~73 GB) (sequential)"
-    echo -e "  ${DIM}    Generate hero image → inpaint your logo with ControlNet${NC}"
-else
-    echo -e " 10) Branded Product Shot        - ${RED}Requires 24+ GB VRAM${NC}"
-fi
-echo ""
-
-# ═══════════════════════════════════════════════════════════
 # Utility / Skip
 # ═══════════════════════════════════════════════════════════
 echo -e "  ${BLUE}── Utility ──${NC}"
-echo " 11) Skip                        - Download models from ComfyUI Manager"
+echo " 10) Skip                        - Download models from ComfyUI Manager"
 echo ""
 echo -e "  ${DIM}Tip: Many more models are available inside ComfyUI via the${NC}"
-echo -e "  ${DIM}Manager extension tab and built-in templates, including:${NC}"
+echo -e "  ${DIM}Manager extension and built-in templates, including:${NC}"
 echo -e "  ${DIM}Anima Anime, Capybara, Kandinsky, NetaYume Lumina, NewBie Exp,${NC}"
 echo -e "  ${DIM}OmniGen2, Ovis, and Qwen Image. You can install${NC}"
 echo -e "  ${DIM}these after launching ComfyUI.${NC}"
 echo ""
-read -p "Select [1-11]: " CHOICE
+read -p "Select [1-10]: " CHOICE
 
 MODEL_NAME=""
 MODEL_URL=""
@@ -295,38 +288,6 @@ case $CHOICE in
         MODEL_SIZE_GB=4
         TEMPLATE_HINT="LTX-Video"
         ;;
-    10)
-        MODEL_NAME="Branded Product Shot"
-        # Primary model: Z-Image Turbo for hero image generation
-        MODEL_URL="https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
-        MODEL_DIR="models/diffusion_models"
-        MODEL_SIZE_GB=73
-        TEMPLATE_HINT=""
-        # Text encoder: Flux.2 Dev uses Mistral — FP8 for ≤40 GB, BF16 for 48+ GB
-        if [ "$VRAM_GB" -ge 48 ]; then
-            FLUX_TEXT_ENC="mistral_3_small_flux2_bf16.safetensors"
-        else
-            FLUX_TEXT_ENC="mistral_3_small_flux2_fp8.safetensors"
-        fi
-        EXTRA_DOWNLOADS=(
-            # Z-Image Turbo companions
-            "models/vae|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
-            "models/text_encoders|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
-            # Flux.2 Dev FP8 (inpainting stage)
-            "models/diffusion_models|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
-            "models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
-            "models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/${FLUX_TEXT_ENC}"
-            # ControlNet Canny for logo edge-guided inpainting (XLabs-AI)
-            "models/xlabs/controlnets|https://huggingface.co/XLabs-AI/flux-controlnet-canny/resolve/main/controlnet.safetensors"
-        )
-        echo ""
-        if [ "$GPU_COUNT" -ge 2 ]; then
-            echo -e "${GREEN}  Dual GPU detected — both models will stay loaded for max speed.${NC}"
-        else
-            echo -e "${YELLOW}  Single GPU — models will load/unload sequentially (still works, slightly slower).${NC}"
-        fi
-        echo -e "${BLUE}  This downloads Z-Image Turbo + Flux.2 Dev + ControlNet Canny (~73 GB total).${NC}"
-        ;;
     *)
         echo ""
         echo "Skipping model download."
@@ -379,20 +340,7 @@ if [ -n "$MODEL_URL" ]; then
                 echo -e "${BLUE}│${NC}  All required files have been pre-downloaded.            ${BLUE}│${NC}"
             fi
             echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
-        elif [ "$MODEL_NAME" = "Branded Product Shot" ]; then
-            echo ""
-            echo -e "${BLUE}┌─────────────────────────────────────────────────────────┐${NC}"
-            echo -e "${BLUE}│${NC}  ${GREEN}Branded Product Shot — Getting Started${NC}                ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}  Step 1: Search templates for ${YELLOW}\"Z-Image\"${NC}                 ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}          Generate your hero product image               ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}  Step 2: Search templates for ${YELLOW}\"Flux.2 Dev\"${NC}               ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}          Use inpaint + ControlNet to add your logo      ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}  ${DIM}All models have been pre-downloaded.${NC}                   ${BLUE}│${NC}"
-            echo -e "${BLUE}│${NC}  ${DIM}Install XLabs ControlNet nodes via ComfyUI Manager.${NC}    ${BLUE}│${NC}"
-            echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
+
         fi
     else
         echo -e "${RED}✗ Download failed (exit code ${DL_EXIT}).${NC}"
