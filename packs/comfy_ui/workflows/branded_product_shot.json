@@ -582,34 +582,25 @@
     },
     {
       "id": 11,
-      "type": "DualCLIPLoader",
+      "type": "CLIPLoader",
       "pos": [
         50,
         800
       ],
       "size": [
         315,
-        130
+        106
       ],
       "flags": {},
       "order": 10,
       "mode": 0,
       "inputs": [
         {
-          "localized_name": "clip_name1",
-          "name": "clip_name1",
+          "localized_name": "clip_name",
+          "name": "clip_name",
           "type": "COMBO",
           "widget": {
-            "name": "clip_name1"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "clip_name2",
-          "name": "clip_name2",
-          "type": "COMBO",
-          "widget": {
-            "name": "clip_name2"
+            "name": "clip_name"
           },
           "link": null
         },
@@ -646,12 +637,11 @@
       ],
       "title": "Flux.2 Text Encoder (Mistral FP8)",
       "properties": {
-        "Node name for S&R": "DualCLIPLoader"
+        "Node name for S&R": "CLIPLoader"
       },
       "widgets_values": [
         "mistral_3_small_flux2_fp8.safetensors",
-        "mistral_3_small_flux2_fp8.safetensors",
-        "flux",
+        "flux2",
         "default"
       ]
     },
