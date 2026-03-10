@@ -147,10 +147,25 @@ echo "  9) LTX-Video 2B                - Best open-source video (~4 GB)"
 echo ""
 
 # ═══════════════════════════════════════════════════════════
+# Workflows (Multi-Model) — chained pipelines for production use
+# ═══════════════════════════════════════════════════════════
+echo -e "  ${BLUE}── Workflows (Multi-Model) ──${NC}"
+if [ "$GPU_COUNT" -ge 2 ]; then
+    echo " 10) Branded Product Shot        - Z-Image + Flux.2 inpaint (~73 GB) [Recommended]"
+    echo -e "  ${DIM}    Generate hero image → inpaint your logo with ControlNet${NC}"
+elif [ "$VRAM_GB" -ge 24 ]; then
+    echo " 10) Branded Product Shot        - Z-Image + Flux.2 inpaint (~73 GB) (sequential)"
+    echo -e "  ${DIM}    Generate hero image → inpaint your logo with ControlNet${NC}"
+else
+    echo -e " 10) Branded Product Shot        - ${RED}Requires 24+ GB VRAM${NC}"
+fi
+echo ""
+
+# ═══════════════════════════════════════════════════════════
 # Utility / Skip
 # ═══════════════════════════════════════════════════════════
 echo -e "  ${BLUE}── Utility ──${NC}"
-echo " 10) Skip                        - Download models from ComfyUI Manager"
+echo " 11) Skip                        - Download models from ComfyUI Manager"
 echo ""
 echo -e "  ${DIM}Tip: Many more models are available inside ComfyUI via the${NC}"
 echo -e "  ${DIM}Manager extension tab and built-in templates, including:${NC}"
@@ -158,7 +173,7 @@ echo -e "  ${DIM}Anima Anime, Capybara, Kandinsky, NetaYume Lumina, NewBie Exp,$
 echo -e "  ${DIM}OmniGen2, Ovis, and Qwen Image. You can install${NC}"
 echo -e "  ${DIM}these after launching ComfyUI.${NC}"
 echo ""
-read -p "Select [1-10]: " CHOICE
+read -p "Select [1-11]: " CHOICE
 
 MODEL_NAME=""
 MODEL_URL=""
@@ -277,6 +292,38 @@ case $CHOICE in
         MODEL_URL="https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors"
         MODEL_SIZE_GB=4
         TEMPLATE_HINT="LTX-Video"
+        ;;
+    10)
+        MODEL_NAME="Branded Product Shot"
+        # Primary model: Z-Image Turbo for hero image generation
+        MODEL_URL="https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+        MODEL_DIR="models/diffusion_models"
+        MODEL_SIZE_GB=73
+        TEMPLATE_HINT="Puget Branded Product Shot"
+        # Text encoder: Flux.2 Dev uses Mistral — FP8 for ≤40 GB, BF16 for 48+ GB
+        if [ "$VRAM_GB" -ge 48 ]; then
+            FLUX_TEXT_ENC="mistral_3_small_flux2_bf16.safetensors"
+        else
+            FLUX_TEXT_ENC="mistral_3_small_flux2_fp8.safetensors"
+        fi
+        EXTRA_DOWNLOADS=(
+            # Z-Image Turbo companions
+            "models/vae|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+            "models/text_encoders|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
+            # Flux.2 Dev FP8 (inpainting stage)
+            "models/diffusion_models|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
+            "models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
+            "models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/${FLUX_TEXT_ENC}"
+            # ControlNet Canny for logo edge-guided inpainting
+            "models/controlnet|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/controlnet/flux2_canny.safetensors"
+        )
+        echo ""
+        if [ "$GPU_COUNT" -ge 2 ]; then
+            echo -e "${GREEN}  Dual GPU detected — both models will stay loaded for max speed.${NC}"
+        else
+            echo -e "${YELLOW}  Single GPU — models will load/unload sequentially (still works, slightly slower).${NC}"
+        fi
+        echo -e "${BLUE}  This downloads Z-Image Turbo + Flux.2 Dev + ControlNet Canny (~73 GB total).${NC}"
         ;;
     *)
         echo ""

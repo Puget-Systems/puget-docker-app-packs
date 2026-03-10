@@ -43,6 +43,12 @@ services:
       
       # Persistence for Custom Nodes (Manager, etc.)
       - ./custom_nodes:/home/puget-app-pack/app/custom_nodes
+      
+      # Custom workflows (Puget templates, e.g. Branded Product Shot)
+      - ./workflows:/home/puget-app-pack/app/user/default/workflows
+      
+      # ControlNet models
+      - ./models/controlnet:/home/puget-app-pack/app/models/controlnet
 
     environment:
       - CLI_ARGS=--listen 0.0.0.0 --preview-method auto
