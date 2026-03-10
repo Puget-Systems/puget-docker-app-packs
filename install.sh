@@ -378,7 +378,7 @@ case $FLAVOR in
         # Create required directories with write permissions
         # This prevents Docker from creating them as root and ensures the container user can write
         echo -e "${BLUE}Ensuring data directories exist and are writable...${NC}"
-        COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "output" "input" "temp" "custom_nodes" "workflows")
+        COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "models/xlabs" "models/xlabs/controlnets" "output" "input" "temp" "custom_nodes" "workflows")
         for dir in "${COMFY_DIRS[@]}"; do
             target="$INSTALL_DIR/$dir"
             if [ ! -d "$target" ]; then
@@ -569,7 +569,7 @@ case $FLAVOR in
                 COMFY_MODEL_NAME="Branded Product Shot"
                 COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
                 COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
-                COMFY_TEMPLATE_HINT="Puget Branded Product Shot"
+                COMFY_TEMPLATE_HINT=""
                 # Text encoder: Flux.2 Dev uses Mistral — FP8 for ≤40 GB, BF16 for 48+ GB
                 if [ "$COMFY_VRAM" -ge 48 ]; then
                     COMFY_FLUX_TEXT_ENC="mistral_3_small_flux2_bf16.safetensors"
@@ -584,8 +584,8 @@ case $FLAVOR in
                     "$INSTALL_DIR/models/diffusion_models|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
                     "$INSTALL_DIR/models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
                     "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/${COMFY_FLUX_TEXT_ENC}"
-                    # ControlNet Canny for logo edge-guided inpainting
-                    "$INSTALL_DIR/models/controlnet|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/controlnet/flux2_canny.safetensors"
+                    # ControlNet Canny for logo edge-guided inpainting (XLabs-AI)
+                    "$INSTALL_DIR/models/xlabs/controlnets|https://huggingface.co/XLabs-AI/flux-controlnet-canny/resolve/main/controlnet.safetensors"
                 )
                 echo ""
                 if [ "$COMFY_GPU_COUNT" -ge 2 ] 2>/dev/null; then

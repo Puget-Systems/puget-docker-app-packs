@@ -47,8 +47,8 @@ services:
       # Custom workflows (Puget templates, e.g. Branded Product Shot)
       - ./workflows:/home/puget-app-pack/app/user/default/workflows
       
-      # ControlNet models
-      - ./models/controlnet:/home/puget-app-pack/app/models/controlnet
+      # ControlNet models (XLabs-AI)
+      - ./models/xlabs/controlnets:/home/puget-app-pack/app/models/xlabs/controlnets
 
     environment:
       - CLI_ARGS=--listen 0.0.0.0 --preview-method auto

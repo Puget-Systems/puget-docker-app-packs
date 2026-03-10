@@ -299,7 +299,7 @@ case $CHOICE in
         MODEL_URL="https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
         MODEL_DIR="models/diffusion_models"
         MODEL_SIZE_GB=73
-        TEMPLATE_HINT="Puget Branded Product Shot"
+        TEMPLATE_HINT=""
         # Text encoder: Flux.2 Dev uses Mistral — FP8 for ≤40 GB, BF16 for 48+ GB
         if [ "$VRAM_GB" -ge 48 ]; then
             FLUX_TEXT_ENC="mistral_3_small_flux2_bf16.safetensors"
@@ -314,8 +314,8 @@ case $CHOICE in
             "models/diffusion_models|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
             "models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
             "models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/${FLUX_TEXT_ENC}"
-            # ControlNet Canny for logo edge-guided inpainting
-            "models/controlnet|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/controlnet/flux2_canny.safetensors"
+            # ControlNet Canny for logo edge-guided inpainting (XLabs-AI)
+            "models/xlabs/controlnets|https://huggingface.co/XLabs-AI/flux-controlnet-canny/resolve/main/controlnet.safetensors"
         )
         echo ""
         if [ "$GPU_COUNT" -ge 2 ]; then
@@ -376,6 +376,20 @@ if [ -n "$MODEL_URL" ]; then
             else
                 echo -e "${BLUE}│${NC}  All required files have been pre-downloaded.            ${BLUE}│${NC}"
             fi
+            echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
+        elif [ "$MODEL_NAME" = "Branded Product Shot" ]; then
+            echo ""
+            echo -e "${BLUE}┌─────────────────────────────────────────────────────────┐${NC}"
+            echo -e "${BLUE}│${NC}  ${GREEN}Branded Product Shot — Getting Started${NC}                ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}  Step 1: Search templates for ${YELLOW}\"Z-Image\"${NC}                 ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}          Generate your hero product image               ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}  Step 2: Search templates for ${YELLOW}\"Flux.2 Dev\"${NC}               ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}          Use inpaint + ControlNet to add your logo      ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}  ${DIM}All models have been pre-downloaded.${NC}                   ${BLUE}│${NC}"
+            echo -e "${BLUE}│${NC}  ${DIM}Install XLabs ControlNet nodes via ComfyUI Manager.${NC}    ${BLUE}│${NC}"
             echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
         fi
     else
