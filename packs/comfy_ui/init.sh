@@ -416,8 +416,8 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
     echo -e "  Local:   ${BLUE}http://localhost:8188${NC}"
     echo -e "  Network: ${BLUE}http://${LOCAL_IP}:8188${NC}"
     echo ""
-    echo -e "  ${DIM}Tip: Open a ComfyUI template to auto-download any additional${NC}"
-    echo -e "  ${DIM}models (VAE, CLIP, ControlNet) needed for your workflow.${NC}"
+    echo -e "  ${DIM}Tip: Use the ${NC}Manager${DIM} button in the ComfyUI sidebar to browse${NC}"
+    echo -e "  ${DIM}and install additional models and custom nodes (server-side).${NC}"
     echo ""
 else
     echo "Run 'docker compose up -d' when ready."

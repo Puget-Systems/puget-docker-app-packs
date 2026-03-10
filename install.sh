@@ -635,7 +635,8 @@ case $FLAVOR in
 
         echo ""
         echo -e "After starting, access ComfyUI at: ${BLUE}http://localhost:8188${NC}"
-        echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to download additional models."
+        echo -e "Use the ${BLUE}Manager${NC} button in the sidebar to install additional models and nodes."
+        echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to reconfigure."
         ;;
     personal_llm)
         echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
