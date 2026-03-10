@@ -815,12 +815,12 @@
           "links": null
         }
       ],
-      "title": "Load Base Image (from Stage 1)",
+      "title": "Load Puget Logo (White)",
       "properties": {
         "Node name for S&R": "LoadImage"
       },
       "widgets_values": [
-        "undefined",
+        "puget-logo-white.png",
         "image"
       ]
     },
