@@ -346,16 +346,9 @@ case $FLAVOR in
     comfy_ui)
         echo "ComfyUI requires AI models to generate images."
         
-        # Ensure puget-app-pack group exists on host (GID 1500, matches container)
-        if ! getent group puget-app-pack > /dev/null 2>&1; then
-            echo -e "${BLUE}Creating 'puget-app-pack' group (GID 1500) for secure volume sharing...${NC}"
-            sudo groupadd -g 1500 puget-app-pack || true
-            sudo usermod -aG puget-app-pack "$USER" || true
-            echo -e "${YELLOW}  Note: You may need to log out and back in for group changes to take effect.${NC}"
-        fi
-
-        # Create required directories with group-writable permissions (775, not 777)
-        # The container runs as puget-app-pack (GID 1500) matching the host group
+        # Create required directories with write permissions
+        # Uses 777 because the container UID may not match the host UID.
+        # These are single-user AI workstations, so broad permissions are acceptable.
         echo -e "${BLUE}Ensuring data directories exist and are writable...${NC}"
         COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "models/xlabs" "models/xlabs/controlnets" "output" "input" "temp" "custom_nodes" "workflows")
         for dir in "${COMFY_DIRS[@]}"; do
@@ -363,8 +356,7 @@ case $FLAVOR in
             if [ ! -d "$target" ]; then
                 mkdir -p "$target"
             fi
-            chown :"puget-app-pack" "$target" 2>/dev/null || true
-            chmod 775 "$target"
+            chmod 777 "$target"
         done
 
         # GPU Detection for VRAM gating
