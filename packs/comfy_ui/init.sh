@@ -60,6 +60,8 @@ if [ ! -d "custom_nodes/ComfyUI-Manager" ]; then
     git clone https://github.com/ltdrdata/ComfyUI-Manager.git custom_nodes/ComfyUI-Manager
     echo -e "${GREEN}✓ ComfyUI Manager installed.${NC}"
 fi
+# Ensure Manager directory is writable by container (UID mismatch)
+chmod -R 777 custom_nodes/ComfyUI-Manager 2>/dev/null || true
 
 # --- GPU Detection ---
 echo ""

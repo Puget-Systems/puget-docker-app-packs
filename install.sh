@@ -350,7 +350,7 @@ case $FLAVOR in
         # Uses 777 because the container UID may not match the host UID.
         # These are single-user AI workstations, so broad permissions are acceptable.
         echo -e "${BLUE}Ensuring data directories exist and are writable...${NC}"
-        COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "models/xlabs" "models/xlabs/controlnets" "output" "input" "temp" "custom_nodes" "workflows")
+        COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "models/xlabs" "models/xlabs/controlnets" "output" "input" "temp" "custom_nodes" "workflows" "user" "user/default")
         for dir in "${COMFY_DIRS[@]}"; do
             target="$INSTALL_DIR/$dir"
             if [ ! -d "$target" ]; then
@@ -366,6 +366,8 @@ case $FLAVOR in
             git clone https://github.com/ltdrdata/ComfyUI-Manager.git "$INSTALL_DIR/custom_nodes/ComfyUI-Manager"
             echo -e "${GREEN}✓ ComfyUI Manager installed.${NC}"
         fi
+        # Ensure Manager directory is writable by container (UID mismatch)
+        chmod -R 777 "$INSTALL_DIR/custom_nodes/ComfyUI-Manager" 2>/dev/null || true
 
         # GPU Detection for VRAM gating
         echo ""
