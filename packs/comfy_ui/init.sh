@@ -63,6 +63,11 @@ fi
 # Ensure Manager directory is writable by container (UID mismatch)
 chmod -R 777 custom_nodes/ComfyUI-Manager 2>/dev/null || true
 
+# Merge Puget template models into Manager's model list
+if [ -f "puget-models.json" ] && [ -f "custom_nodes/ComfyUI-Manager/model-list.json" ]; then
+    python3 merge_puget_models.py puget-models.json custom_nodes/ComfyUI-Manager/model-list.json 2>/dev/null || true
+fi
+
 # --- GPU Detection ---
 echo ""
 echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
