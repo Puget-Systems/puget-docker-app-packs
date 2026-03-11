@@ -44,6 +44,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install 3D node dependencies (fixes nodes_load_3d.py import errors)
 RUN pip install --no-cache-dir trimesh pygltflib numpy-stl
 
+# Install ComfyUI Manager dependencies (volume-mounted from host)
+RUN pip install --no-cache-dir GitPython PyGithub matrix-nio huggingface-hub typer rich toml uv chardet
+
 # Ensure standard data directories exist for volume mounting
 # Using -p for idempotent creation (some may exist from git clone)
 RUN mkdir -p models output input temp custom_nodes
