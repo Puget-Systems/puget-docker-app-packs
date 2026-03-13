@@ -1,4 +1,4 @@
-# Puget Systems Docker App Pack
+# Puget Systems Docker App Packs
 
 A standardized, high-performance starter template system for AI and engineering workflows on Puget Systems workstations.
 
