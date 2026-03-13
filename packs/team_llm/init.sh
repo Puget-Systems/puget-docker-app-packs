@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Puget Systems — Team LLM Initialization
 # Detects GPUs, recommends a model, writes .env, launches the stack.
 

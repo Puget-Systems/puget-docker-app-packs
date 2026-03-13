@@ -11,3 +11,6 @@ test-deploy/
 tmp/
 *.log
 .env
+
+# Build state (per-installation, not tracked)
+.build_fingerprint

@@ -23,7 +23,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 *   **Target**: Generative AI & Image/Video Synthesis
 *   **Base**: NVIDIA CUDA 12.6 Runtime (Ubuntu 24.04)
 *   **Stack**: ComfyUI (Latest), Manager-Ready
-*   **Models**: Flux.1 Schnell, LTX-Video 2B, SDXL Base 1.0 (selectable during install)
+*   **Models**: Pro Image (Flux.2 Dev, Flux.1 Dev, HiDream), Standard Image (Flux.2 Klein, Flux.1 Schnell, SDXL Turbo, SD 3.5 Medium), Pro Video (LTX-Video 2B)
 *   **Persistence**: Auto-maps `./models`, `./output`, `./input`, `./custom_nodes` to host
 
 ### 3. Personal LLM

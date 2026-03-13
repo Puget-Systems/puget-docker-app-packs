@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Puget Systems Docker App Pack - Universal Installer
 # Standards: Ubuntu 24.04 LTS target, /home/puget-app-pack/app pathing
@@ -9,6 +10,12 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+# --- Source shared helpers ---
+INSTALLER_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+source "$INSTALLER_DIR/scripts/lib/gpu_detect.sh"
+source "$INSTALLER_DIR/scripts/lib/smart_build.sh"
+source "$INSTALLER_DIR/scripts/lib/vllm_monitor.sh"
 
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${BLUE}   Puget Systems Docker App Pack - Universal Installer${NC}"
@@ -48,7 +55,7 @@ if ! command -v docker &> /dev/null; then
         
         # 3. Add Docker's official GPG key
         sudo install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
         sudo chmod a+r /etc/apt/keyrings/docker.gpg
         
         # 4. Add the Docker repository
@@ -62,7 +69,7 @@ if ! command -v docker &> /dev/null; then
         sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
         
         # 6. Add user to docker group
-        sudo usermod -aG docker $USER
+        sudo usermod -aG docker "$USER"
         
         echo -e "${GREEN}✓ Docker installed.${NC}"
         echo -e "${YELLOW}  Note: You may need to log out and back in for docker group changes.${NC}"
@@ -80,7 +87,7 @@ if command -v docker &> /dev/null; then
         if id -nG "$USER" | grep -qw "docker"; then
             echo -e "${YELLOW}User added to docker group but session not updated.${NC}"
             echo -e "${BLUE}Reloading installer with group permissions...${NC}"
-            exec sg docker -c "$0 $@"
+            exec sg docker -c "\"$0\" \"$@\""
         fi
     fi
 fi
@@ -265,15 +272,17 @@ fi
 # --- Configuration ---
 
 # Resolve the directory where this script resides to find the packs
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-PACKS_DIR="$SCRIPT_DIR/packs"
+PACKS_DIR="$INSTALLER_DIR/packs"
 
 if [ ! -d "$PACKS_DIR" ]; then
    echo -e "${RED}Error: 'packs' directory not found at $PACKS_DIR!${NC}"
    exit 1
 fi
 
-OPTIONS=($(ls "$PACKS_DIR"))
+OPTIONS=()
+for _d in "$PACKS_DIR"/*/; do
+    OPTIONS+=("$(basename "$_d")")
+done
 
 if [ ${#OPTIONS[@]} -eq 0 ]; then
     echo -e "${RED}Error: No packs found in $PACKS_DIR.${NC}"
@@ -338,57 +347,274 @@ case $FLAVOR in
         echo "ComfyUI requires AI models to generate images."
         
         # Create required directories with write permissions
-        # This prevents Docker from creating them as root and ensures the container user can write
+        # Uses 777 because the container UID may not match the host UID.
+        # These are single-user AI workstations, so broad permissions are acceptable.
         echo -e "${BLUE}Ensuring data directories exist and are writable...${NC}"
-        COMFY_DIRS=("models" "models/checkpoints" "output" "input" "temp" "custom_nodes")
+        COMFY_DIRS=("models" "models/checkpoints" "models/diffusion_models" "models/vae" "models/clip" "models/loras" "models/controlnet" "models/text_encoders" "models/xlabs" "models/xlabs/controlnets" "output" "input" "temp" "custom_nodes" "workflows" "user" "user/default")
         for dir in "${COMFY_DIRS[@]}"; do
             target="$INSTALL_DIR/$dir"
             if [ ! -d "$target" ]; then
                 mkdir -p "$target"
             fi
-            # Allow container user to write (since UID might not match host)
             chmod 777 "$target"
         done
 
+        # --- ComfyUI Manager (auto-install on first run) ---
+        if [ ! -d "$INSTALL_DIR/custom_nodes/ComfyUI-Manager" ]; then
+            echo ""
+            echo -e "${BLUE}Installing ComfyUI Manager (server-side model & node management)...${NC}"
+            git clone https://github.com/ltdrdata/ComfyUI-Manager.git "$INSTALL_DIR/custom_nodes/ComfyUI-Manager"
+            echo -e "${GREEN}✓ ComfyUI Manager installed.${NC}"
+        fi
+        # Ensure Manager directory is writable by container (UID mismatch)
+        chmod -R 777 "$INSTALL_DIR/custom_nodes/ComfyUI-Manager" 2>/dev/null || true
+
+        # Install Puget model merge as a Manager startup script
+        MANAGER_STARTUP="$INSTALL_DIR/custom_nodes/ComfyUI-Manager/__manager/startup-scripts"
+        mkdir -p "$MANAGER_STARTUP"
+        if [ -f "$INSTALL_DIR/puget_merge_startup.py" ]; then
+            cp "$INSTALL_DIR/puget_merge_startup.py" "$MANAGER_STARTUP/puget_merge_startup.py"
+            chmod 777 "$MANAGER_STARTUP/puget_merge_startup.py"
+        fi
+        chmod -R 777 "$INSTALL_DIR/custom_nodes/ComfyUI-Manager/__manager" 2>/dev/null || true
+
+        # GPU Detection for VRAM gating
         echo ""
-        echo "Select a Creative Stack for your workflow:"
-        echo "  1) Pro Image  (Flux.1 Schnell ~12GB) - SOTA Image Generation"
-        echo "  2) Pro Video  (LTX-Video 2B   ~4GB)  - Best Open Source Video Model"
-        echo "  3) Standard   (SDXL Base 1.0  ~6GB)  - Reliable, Broad Compatibility"
-        echo "  4) Skip       - I'll download models myself"
+        echo -e "${YELLOW}GPU Configuration:${NC}"
+        if detect_gpus; then
+            # Map shared vars to comfy-prefixed names for the model menu
+            COMFY_GPU_COUNT=$GPU_COUNT
+            COMFY_VRAM=$VRAM_GB
+            COMFY_TOTAL_VRAM=$TOTAL_VRAM
+            echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+        else
+            COMFY_GPU_COUNT=0
+            COMFY_VRAM=0
+            COMFY_TOTAL_VRAM=0
+            echo -e "${YELLOW}  ⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
+        fi
+
         echo ""
-        read -p "Select a stack [1-4]: " STACK_CHOICE
-        
-        case $STACK_CHOICE in
+        echo "Select a model for your workflow. More models are available inside"
+        echo "ComfyUI via the Manager extension and built-in templates."
+        echo ""
+
+        DIM='\033[2m'
+
+        echo -e "  ${BLUE}── Pro Image (Extreme detail, production quality) ──${NC}"
+        if [ "$COMFY_VRAM" -ge 16 ]; then
+            echo "  1) Flux.2 Dev (FP8)            - Flagship image gen (~53 GB total)"
+        else
+            echo -e "  1) Flux.2 Dev (FP8)            - ${RED}Requires ~16 GB VRAM${NC}"
+        fi
+        if [ "$COMFY_VRAM" -ge 16 ]; then
+            echo "  2) Flux.1 Dev                  - Previous gen flagship (~12 GB)"
+        else
+            echo -e "  2) Flux.1 Dev                  - ${RED}Requires ~16 GB VRAM${NC}"
+        fi
+        if [ "$COMFY_VRAM" -ge 16 ]; then
+            echo "  3) HiDream I1 Dev (FP8)        - 17B param, high detail (~27 GB)"
+        else
+            echo -e "  3) HiDream I1 Dev (FP8)        - ${RED}Requires ~16 GB VRAM${NC}"
+        fi
+        echo ""
+
+        echo -e "  ${BLUE}── Standard Image (Fast iterations, good quality) ──${NC}"
+        echo "  4) Flux.2 Klein (4B)           - 1-2s on 50-series (~8 GB) [Recommended]"
+        echo "  5) Flux.1 Schnell              - Fast Flux generation (~12 GB)"
+        echo "  6) SDXL Turbo (FP16)           - Fastest SDXL, real-time (~3 GB)"
+        echo "  7) SD 3.5 Medium               - Latest SD3 arch (~5 GB)"
+        echo "  8) Z-Image Turbo               - Fast, high quality (~16 GB)"
+        echo ""
+
+        echo -e "  ${BLUE}── Pro Video ──${NC}"
+        echo "  9) LTX-Video 2B                - Best open-source video (~4 GB)"
+        echo ""
+
+        echo " 10) Skip                        - Download models from ComfyUI Manager"
+        echo ""
+        echo -e "  ${DIM}Tip: Additional models (Anima Anime, Capybara, Kandinsky, OmniGen2,${NC}"
+        echo -e "  ${DIM}Ovis, Qwen Image, etc.) available via ComfyUI Manager and templates.${NC}"
+        echo ""
+        read -p "Select [1-10]: " COMFY_MODEL_CHOICE
+
+        COMFY_MODEL_NAME=""
+        COMFY_MODEL_URL=""
+        COMFY_MODEL_DIR="$INSTALL_DIR/models/checkpoints"
+        COMFY_HF_TOKEN=""
+        COMFY_TEMPLATE_HINT=""
+        COMFY_EXTRA_DOWNLOADS=()
+
+        case $COMFY_MODEL_CHOICE in
             1)
-                echo -e "${BLUE}Downloading Flux.1 Schnell (Pro Image Stack)...${NC}"
-                mkdir -p "$INSTALL_DIR/models/checkpoints"
-                wget -q --show-progress -P "$INSTALL_DIR/models/checkpoints/" \
-                    "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
-                echo -e "${GREEN}✓ Flux.1 Schnell downloaded.${NC}"
+                COMFY_MODEL_NAME="Flux.2 Dev (FP8)"
+                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/diffusion_models/flux2_dev_fp8mixed.safetensors"
+                COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
+                COMFY_TEMPLATE_HINT="Flux.2 Dev"
+                # Text encoder: BF16 (33 GB) needs 48+ GB GPU; FP8 (17 GB) fits on 24-40 GB GPUs
+                if [ "$COMFY_VRAM" -ge 48 ]; then
+                    COMFY_TEXT_ENC="mistral_3_small_flux2_bf16.safetensors"
+                else
+                    COMFY_TEXT_ENC="mistral_3_small_flux2_fp8.safetensors"
+                    echo -e "${YELLOW}  Note: Using FP8 text encoder (fits ${COMFY_VRAM} GB GPU).${NC}"
+                fi
+                COMFY_EXTRA_DOWNLOADS=(
+                    "$INSTALL_DIR/models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/${COMFY_TEXT_ENC}"
+                    "$INSTALL_DIR/models/loras|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/loras/Flux_2-Turbo-LoRA_comfyui.safetensors"
+                )
                 ;;
             2)
-                echo -e "${BLUE}Downloading LTX-Video 2B (Pro Video Stack)...${NC}"
-                mkdir -p "$INSTALL_DIR/models/checkpoints"
-                wget -q --show-progress -P "$INSTALL_DIR/models/checkpoints/" \
-                    "https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors"
-                echo -e "${GREEN}✓ LTX-Video downloaded.${NC}"
-                echo -e "${YELLOW}Note: You will need to install 'ComfyUI-LTXVideo' custom nodes via ComfyUI Manager.${NC}"
+                COMFY_MODEL_NAME="Flux.1 Dev"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ Flux.1 Dev is a gated model on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-dev"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
+                COMFY_TEMPLATE_HINT="Flux.1 Dev"
                 ;;
             3)
-                echo -e "${BLUE}Downloading SDXL Base 1.0 (Standard Stack)...${NC}"
-                mkdir -p "$INSTALL_DIR/models/checkpoints"
-                wget -q --show-progress -P "$INSTALL_DIR/models/checkpoints/" \
-                    "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors"
-                echo -e "${GREEN}✓ SDXL Base 1.0 downloaded.${NC}"
+                COMFY_MODEL_NAME="HiDream I1 Dev (FP8)"
+                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/diffusion_models/hidream_i1_dev_fp8.safetensors"
+                COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
+                COMFY_TEMPLATE_HINT="HiDream"
+                COMFY_EXTRA_DOWNLOADS=(
+                    "$INSTALL_DIR/models/vae|https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/vae/ae.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/text_encoders/clip_g_hidream.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/text_encoders/clip_l_hidream.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/text_encoders/llama_3.1_8b_instruct_fp8_scaled.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/HiDream-I1_ComfyUI/resolve/main/split_files/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"
+                )
                 ;;
+            4)
+                COMFY_MODEL_NAME="Flux.2 Klein (4B)"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/flux-2-klein-4b.safetensors"
+                COMFY_TEMPLATE_HINT="Flux.2 Klein"
+                ;;
+            5)
+                COMFY_MODEL_NAME="Flux.1 Schnell"
+                COMFY_MODEL_URL="https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/flux1-schnell.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ Flux.1 Schnell is gated on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
+                COMFY_TEMPLATE_HINT="Flux.1 Schnell"
+                ;;
+            6)
+                COMFY_MODEL_NAME="SDXL Turbo (FP16)"
+                COMFY_MODEL_URL="https://huggingface.co/stabilityai/sdxl-turbo/resolve/main/sd_xl_turbo_1.0_fp16.safetensors"
+                COMFY_TEMPLATE_HINT="SDXL Turbo"
+                ;;
+            7)
+                COMFY_MODEL_NAME="SD 3.5 Medium"
+                COMFY_MODEL_URL="https://huggingface.co/stabilityai/stable-diffusion-3.5-medium/resolve/main/sd3.5_medium.safetensors"
+                echo ""
+                echo -e "${YELLOW}⚠ SD 3.5 Medium is gated on HuggingFace.${NC}"
+                echo "  Accept the license at: https://huggingface.co/stabilityai/stable-diffusion-3.5-medium"
+                read -p "  Enter your HuggingFace token (or press Enter to skip): " COMFY_HF_TOKEN
+                if [ -z "$COMFY_HF_TOKEN" ]; then
+                    echo -e "${YELLOW}  Download skipped. Use ComfyUI Manager after launch.${NC}"
+                    COMFY_MODEL_URL=""
+                fi
+                COMFY_TEMPLATE_HINT="SD3.5 Simple"
+                ;;
+            8)
+                COMFY_MODEL_NAME="Z-Image Turbo (BF16)"
+                COMFY_MODEL_URL="https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+                COMFY_MODEL_DIR="$INSTALL_DIR/models/diffusion_models"
+                COMFY_TEMPLATE_HINT="Z-Image"
+                COMFY_EXTRA_DOWNLOADS=(
+                    "$INSTALL_DIR/models/vae|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+                    "$INSTALL_DIR/models/text_encoders|https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
+                )
+                ;;
+            9)
+                COMFY_MODEL_NAME="LTX-Video 2B"
+                COMFY_MODEL_URL="https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v0.9.5.safetensors"
+                COMFY_TEMPLATE_HINT="LTX-Video"
+                ;;
+
             *)
                 echo "Skipping model download."
-                echo -e "You can download models later to: ${BLUE}$INSTALL_DIR/models/checkpoints/${NC}"
+                echo -e "You can download models from within ComfyUI using the ${BLUE}Manager${NC} extension."
                 ;;
         esac
+
+        if [ -n "$COMFY_MODEL_URL" ]; then
+            COMFY_MODEL_FILE=$(basename "$COMFY_MODEL_URL")
+            mkdir -p "$COMFY_MODEL_DIR"
+            if [ -f "$COMFY_MODEL_DIR/$COMFY_MODEL_FILE" ]; then
+                echo -e "${GREEN}✓ ${COMFY_MODEL_NAME} already downloaded, skipping.${NC}"
+            else
+                echo -e "${BLUE}Downloading ${COMFY_MODEL_NAME}...${NC}"
+                if [ -n "$COMFY_HF_TOKEN" ]; then
+                    wget -nc -q --show-progress --header="Authorization: Bearer ${COMFY_HF_TOKEN}" -P "$COMFY_MODEL_DIR/" "$COMFY_MODEL_URL"
+                else
+                    wget -nc -q --show-progress -P "$COMFY_MODEL_DIR/" "$COMFY_MODEL_URL"
+                fi
+                if [ $? -eq 0 ]; then
+                    echo -e "${GREEN}✓ ${COMFY_MODEL_NAME} downloaded.${NC}"
+                else
+                    echo -e "${RED}✗ Download failed. You can retry from within ComfyUI Manager.${NC}"
+                fi
+            fi
+
+            # Download companion files (VAE, text encoders, LoRAs)
+            for extra in "${COMFY_EXTRA_DOWNLOADS[@]}"; do
+                EXTRA_DIR=$(echo "$extra" | cut -d'|' -f1)
+                EXTRA_URL=$(echo "$extra" | cut -d'|' -f2)
+                EXTRA_NAME=$(basename "$EXTRA_URL")
+                mkdir -p "$EXTRA_DIR"
+                EXTRA_EXIT=0
+                if [ -f "$EXTRA_DIR/$EXTRA_NAME" ]; then
+                    echo -e "${GREEN}  ✓ ${EXTRA_NAME} (already exists)${NC}"
+                else
+                    echo -e "${BLUE}  Downloading ${EXTRA_NAME}...${NC}"
+                    if [ -n "$COMFY_HF_TOKEN" ]; then
+                        wget -nc -q --show-progress --header="Authorization: Bearer ${COMFY_HF_TOKEN}" -P "$EXTRA_DIR/" "$EXTRA_URL" || EXTRA_EXIT=$?
+                    else
+                        wget -nc -q --show-progress -P "$EXTRA_DIR/" "$EXTRA_URL" || EXTRA_EXIT=$?
+                    fi
+                fi
+                if [ $EXTRA_EXIT -eq 0 ]; then
+                    echo -e "${GREEN}  ✓ ${EXTRA_NAME}${NC}"
+                else
+                    echo -e "${RED}  ✗ ${EXTRA_NAME} failed — will auto-download when template is opened${NC}"
+                fi
+            done
+
+            if [ -n "$COMFY_TEMPLATE_HINT" ]; then
+                echo ""
+                echo -e "${BLUE}┌─────────────────────────────────────────────────────────┐${NC}"
+                echo -e "${BLUE}│${NC}  ${GREEN}Next Step:${NC} Open ComfyUI and search templates for:       ${BLUE}│${NC}"
+                echo -e "${BLUE}│${NC}  ${YELLOW}\"${COMFY_TEMPLATE_HINT}\"${NC}                                          ${BLUE}│${NC}"
+                echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
+                echo -e "${BLUE}│${NC}  The template will set up the correct workflow.          ${BLUE}│${NC}"
+                if [ "${COMFY_TEXT_ENC:-}" = "mistral_3_small_flux2_fp8.safetensors" ]; then
+                    echo -e "${BLUE}│${NC}                                                         ${BLUE}│${NC}"
+                    echo -e "${BLUE}│${NC}  ${YELLOW}⚠ Template may show 'Missing Models' for BF16${NC}          ${BLUE}│${NC}"
+                    echo -e "${BLUE}│${NC}  ${YELLOW}  text encoder (too large for ${COMFY_VRAM} GB GPU).${NC}            ${BLUE}│${NC}"
+                    echo -e "${BLUE}│${NC}  Close the dialog, then in the text encoder node,       ${BLUE}│${NC}"
+                    echo -e "${BLUE}│${NC}  select: ${GREEN}mistral_3_small_flux2_fp8.safetensors${NC}          ${BLUE}│${NC}"
+                else
+                    echo -e "${BLUE}│${NC}  All required files have been pre-downloaded.            ${BLUE}│${NC}"
+                fi
+                echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
+            fi
+        fi
+
         echo ""
         echo -e "After starting, access ComfyUI at: ${BLUE}http://localhost:8188${NC}"
+        echo -e "Use the ${BLUE}Manager${NC} button in the sidebar to install additional models and nodes."
+        echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to reconfigure."
         ;;
     personal_llm)
         echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
@@ -421,31 +647,15 @@ case $FLAVOR in
         echo ""
         # GPU Detection
         echo -e "${YELLOW}GPU Configuration:${NC}"
-        if command -v nvidia-smi &> /dev/null; then
-            GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-            GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-            VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
-            VRAM_GB=$((VRAM_MB / 1024))
-            TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
-            # Detect compute capability for CUDA version selection
-            # Blackwell (RTX 50xx) = compute_cap 12.0+ → requires cu130 Docker images
-            COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
-            COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
-            if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
-                NIGHTLY_PREFIX="cu130-nightly"
-                IS_BLACKWELL=true
-                echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+        if detect_gpus; then
+            echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+            if [ "$IS_BLACKWELL" = true ]; then
                 echo -e "${GREEN}    Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
-            else
-                NIGHTLY_PREFIX="nightly"
-                IS_BLACKWELL=false
-                echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
             fi
         else
             GPU_COUNT=1
             TOTAL_VRAM=32
-            NIGHTLY_PREFIX="nightly"
-            IS_BLACKWELL=false
+            VRAM_GB=32
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
         fi
         echo ""
@@ -627,7 +837,14 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
         fi
     fi
 
-    docker compose up --build -d
+    # Smart rebuild: detect if build files changed → --no-cache rebuild
+    smart_build
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Build failed. Cannot start container.${NC}"
+        cd - > /dev/null
+        exit 1
+    fi
+    docker compose up -d
     
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Container started successfully!${NC}"
@@ -685,173 +902,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                     echo -e "${YELLOW}Waiting for model to download and load...${NC}"
                     echo "  (This may take 5-30 minutes depending on model size and bandwidth)"
                     echo ""
-                    
-                    CONTAINER_NAME="puget_vllm"
-                    READY=false
-                    LAST_PHASE=""
-                    PHASE_LEVEL=0           # Monotonic: phases only advance forward
-                    LAST_RESTART_COUNT=0    # Track container restarts to detect crash loops
-                    CRASH_DETECTIONS=0      # Number of times we've seen a restart increment
-                    START_TIME=$(date +%s)  # Track elapsed time
-                    
-                    while ! $READY; do
-                        # Check if container is still running
-                        if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-                            echo -e "\n${RED}✗ vLLM container exited. Check logs:${NC}"
-                            echo -e "  ${BLUE}docker compose logs inference${NC}"
-                            break
-                        fi
-                        
-                        # Detect crash loops (container restarting repeatedly)
-                        RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' "$CONTAINER_NAME" 2>/dev/null || echo "0")
-                        if [ "$RESTART_COUNT" -gt "$LAST_RESTART_COUNT" ] 2>/dev/null; then
-                            CRASH_DETECTIONS=$((CRASH_DETECTIONS + 1))
-                            LAST_RESTART_COUNT=$RESTART_COUNT
-                            # Reset phase tracking since we're on a fresh attempt
-                            PHASE_LEVEL=0
-                            LAST_PHASE=""
-                        fi
-                        
-                        if [ "$CRASH_DETECTIONS" -ge 2 ]; then
-                            echo ""
-                            echo -e "${RED}✗ vLLM is crash-looping (restarted ${RESTART_COUNT} times).${NC}"
-                            echo ""
-                            # Extract the actual error from the logs
-                            ERROR_MSG=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -E "RuntimeError|OutOfMemoryError|CUDA|Error|error" | tail -5)
-                            if [ -n "$ERROR_MSG" ]; then
-                                echo -e "${RED}  Error from logs:${NC}"
-                                echo "$ERROR_MSG" | while IFS= read -r line; do
-                                    echo -e "  ${YELLOW}${line}${NC}"
-                                done
-                                echo ""
-                            fi
-                            echo "  Troubleshooting:"
-                            echo -e "  ${BLUE}docker compose logs inference${NC}  - View full logs"
-                            echo -e "  Try reducing GPU memory: edit .env and lower MAX_CONTEXT"
-                            echo -e "  Or try a smaller model: ${BLUE}./init.sh${NC}"
-                            break
-                        fi
-                        
-                        # Check if API is responding (model fully loaded)
-                        if curl -s --max-time 2 http://localhost:8000/v1/models > /dev/null 2>&1; then
-                            ELAPSED=$(( $(date +%s) - START_TIME ))
-                            ELAPSED_MIN=$((ELAPSED / 60))
-                            ELAPSED_SEC=$((ELAPSED % 60))
-                            echo -e "\n${GREEN}✓ Model loaded and ready! (${ELAPSED_MIN}m ${ELAPSED_SEC}s)${NC}"
-                            READY=true
-                            break
-                        fi
-                        
-                        # Parse vLLM logs to determine startup phase
-                        # Use --tail 20 for download progress (tqdm bars can be verbose)
-                        LAST_LOG=$(docker logs "$CONTAINER_NAME" --tail 20 2>&1)
-                        CANDIDATE_PHASE=""
-                        CANDIDATE_LEVEL=0
-                        DETAIL=""
-                        
-                        # Check phases in order of progression (highest priority first)
-                        if echo "$LAST_LOG" | grep -q "CUDA graphs"; then
-                            GRAPH_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+%\|' | sed 's/|//' | tail -1)
-                            CANDIDATE_PHASE="Capturing CUDA graphs"
-                            CANDIDATE_LEVEL=5
-                            DETAIL="${GRAPH_PCT:-working...}"
-                        elif echo "$LAST_LOG" | grep -q "torch.compile\|Dynamo bytecode\|compile range"; then
-                            CANDIDATE_PHASE="Compiling model kernels"
-                            CANDIDATE_LEVEL=4
-                            DETAIL="(torch.compile)"
-                        elif echo "$LAST_LOG" | grep -q "Autotuning"; then
-                            CANDIDATE_PHASE="Autotuning kernels"
-                            CANDIDATE_LEVEL=3
-                            DETAIL=""
-                        elif echo "$LAST_LOG" | grep -q "Loading safetensors\|Loading weights\|Starting to load model"; then
-                            SHARD_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+% Completed' | tail -1)
-                            CANDIDATE_PHASE="Loading model weights"
-                            CANDIDATE_LEVEL=2
-                            DETAIL="${SHARD_PCT:-starting...}"
-                        elif echo "$LAST_LOG" | grep -qiE "Downloading|Fetching"; then
-                            CANDIDATE_PHASE="Downloading model"
-                            CANDIDATE_LEVEL=1
-                            DETAIL=""
-                        fi
-                        
-                        # For any phase at level <= 1, check NET I/O for live download progress
-                        if [ "$CANDIDATE_LEVEL" -le 1 ] || [ -z "$CANDIDATE_PHASE" ]; then
-                            NET_RX=$(docker stats "$CONTAINER_NAME" --no-stream --format '{{.NetIO}}' 2>/dev/null | awk -F'/' '{print $1}' | xargs)
-                            NET_VAL=$(echo "$NET_RX" | grep -oE '[0-9.]+' | head -1)
-                            NET_UNIT=$(echo "$NET_RX" | grep -oE '[A-Za-z]+' | head -1)
-                            
-                            NET_GB=0
-                            case "$NET_UNIT" in
-                                GB|GiB) NET_GB=$(echo "$NET_VAL" | cut -d. -f1) ;;
-                                MB|MiB) NET_GB=0 ;;
-                                TB|TiB) NET_GB=$(($(echo "$NET_VAL" | cut -d. -f1) * 1024)) ;;
-                            esac
-                            
-                            if [ "$NET_GB" -gt 0 ] 2>/dev/null && [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
-                                DL_PCT=$((NET_GB * 100 / VLLM_MODEL_SIZE_GB))
-                                [ "$DL_PCT" -gt 100 ] && DL_PCT=100
-                                CANDIDATE_PHASE="Downloading model"
-                                CANDIDATE_LEVEL=1
-                                DETAIL="${DL_PCT}% (${NET_RX} / ${VLLM_MODEL_SIZE_GB} GB)"
-                            elif [ -n "$NET_VAL" ] && echo "$NET_UNIT" | grep -qiE "MB|MiB" 2>/dev/null; then
-                                NET_MB=$(echo "$NET_VAL" | cut -d. -f1)
-                                if [ "${NET_MB:-0}" -gt 50 ] 2>/dev/null; then
-                                    CANDIDATE_PHASE="Downloading model"
-                                    CANDIDATE_LEVEL=1
-                                    DETAIL="${NET_RX}"
-                                elif [ -z "$CANDIDATE_PHASE" ]; then
-                                    if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
-                                        CANDIDATE_PHASE="Initializing model"
-                                        CANDIDATE_LEVEL=0
-                                        DETAIL=""
-                                    else
-                                        CANDIDATE_PHASE="Starting up"
-                                        CANDIDATE_LEVEL=0
-                                        DETAIL="waiting..."
-                                    fi
-                                fi
-                            elif [ -z "$CANDIDATE_PHASE" ]; then
-                                if echo "$LAST_LOG" | grep -q "Resolved architecture\|model_tag\|max_model_len"; then
-                                    CANDIDATE_PHASE="Initializing model"
-                                    CANDIDATE_LEVEL=0
-                                    DETAIL=""
-                                else
-                                    CANDIDATE_PHASE="Starting up"
-                                    CANDIDATE_LEVEL=0
-                                    DETAIL="waiting..."
-                                fi
-                            fi
-                        fi
-                        
-                        # Only advance phase forward, never regress (prevents oscillation)
-                        if [ "$CANDIDATE_LEVEL" -ge "$PHASE_LEVEL" ]; then
-                            # Print newline to preserve the old status line before showing new phase
-                            if [ "$CANDIDATE_PHASE" != "$LAST_PHASE" ] && [ -n "$LAST_PHASE" ]; then
-                                echo ""
-                            fi
-                            PHASE="$CANDIDATE_PHASE"
-                            PHASE_LEVEL=$CANDIDATE_LEVEL
-                            LAST_PHASE="$PHASE"
-                        else
-                            PHASE="$LAST_PHASE"
-                        fi
-                        
-                        # Calculate elapsed time
-                        ELAPSED=$(( $(date +%s) - START_TIME ))
-                        ELAPSED_MIN=$((ELAPSED / 60))
-                        ELAPSED_SEC=$((ELAPSED % 60))
-                        ELAPSED_STR=$(printf "%d:%02d" $ELAPSED_MIN $ELAPSED_SEC)
-                        
-                        # Print phase with elapsed time and optional detail (overwrites current line)
-                        if [ -n "$DETAIL" ]; then
-                            printf "\r  ⏳ [%s] %s... %s   " "$ELAPSED_STR" "$PHASE" "$DETAIL"
-                        else
-                            printf "\r  ⏳ [%s] %s...           " "$ELAPSED_STR" "$PHASE"
-                        fi
-                        
-                        sleep 3
-                    done
-                    echo ""
+                    wait_for_vllm "puget_vllm" "$VLLM_MODEL_SIZE_GB"
                 fi
                 
                 echo -e "  Re-configure model: ${BLUE}./init.sh${NC}"

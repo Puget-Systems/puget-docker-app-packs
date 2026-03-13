@@ -1,6 +1,11 @@
 # Base Image: NVIDIA CUDA Runtime (Ubuntu 24.04 base)
-# CUDA 12.6 supports both Ada (RTX 4090, driver 550+) and Blackwell (RTX 5090, driver 560+)
-FROM nvidia/cuda:12.6.0-runtime-ubuntu24.04
+# CUDA 12.8 is the first version with native Blackwell (sm_120 / RTX 5090) support
+# Also supports Ada (RTX 4090) and older architectures
+ARG CUDA_VERSION=12.8.0
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
+
+# PyTorch index URL (cu128 supports both Ada and Blackwell natively)
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -20,7 +25,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create standard user
-RUN groupadd -r puget-app-pack && useradd -r -g puget-app-pack -m -d /home/puget-app-pack -s /bin/bash puget-app-pack
+RUN groupadd -r -g 1500 puget-app-pack && useradd -r -g puget-app-pack -m -d /home/puget-app-pack -s /bin/bash puget-app-pack
 
 # Set up Workspace
 WORKDIR /home/puget-app-pack/app
@@ -33,11 +38,14 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python Requirements
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url ${TORCH_INDEX_URL}
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install 3D node dependencies (fixes nodes_load_3d.py import errors)
 RUN pip install --no-cache-dir trimesh pygltflib numpy-stl
+
+# Install ComfyUI Manager dependencies (volume-mounted from host)
+RUN pip install --no-cache-dir GitPython PyGithub matrix-nio huggingface-hub typer rich toml uv chardet
 
 # Ensure standard data directories exist for volume mounting
 # Using -p for idempotent creation (some may exist from git clone)
