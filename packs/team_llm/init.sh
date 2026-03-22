@@ -13,34 +13,23 @@ echo -e "${BLUE}============================================================${NC
 echo -e "${BLUE}   Puget Systems — Team LLM Setup (vLLM)${NC}"
 echo -e "${BLUE}============================================================${NC}"
 
+# --- Source shared libraries ---
+INIT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+source "$INIT_DIR/scripts/lib/gpu_detect.sh"
+source "$INIT_DIR/scripts/lib/vllm_model_select.sh"
+
 # --- GPU Detection ---
 echo ""
 echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
 
-if ! command -v nvidia-smi &> /dev/null; then
+if ! detect_gpus; then
     echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
     exit 1
 fi
 
-GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
-VRAM_GB=$((VRAM_MB / 1024))
-TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
-
-# Detect compute capability for CUDA version selection
-# Blackwell (RTX 50xx) = compute_cap 12.0+ → requires cu130 Docker images
-COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
-COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
-if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
-    NIGHTLY_PREFIX="cu130-nightly"
-    IS_BLACKWELL=true
-    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+if [ "$IS_BLACKWELL" = true ]; then
     echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
-else
-    NIGHTLY_PREFIX="nightly"
-    IS_BLACKWELL=false
-    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
 fi
 
 # --- Cache Proxy Status ---
@@ -55,136 +44,28 @@ else
     echo "  To enable, add CACHE_PROXY=http://<ip>:3128 to .env"
 fi
 
-# --- Model Selection ---
+# --- Model Selection (uses shared library) ---
 echo ""
 echo -e "${YELLOW}[2/3] Select a model${NC}"
 echo ""
 echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
-
-# 1) Qwen 3 8B — always fits
-echo "  1) Qwen 3 (8B)                - Fast, single GPU (~16 GB BF16)"
-
-# 2) Qwen 3 32B FP8 — near-lossless, needs ~32 GB
-if [ "$TOTAL_VRAM" -ge 40 ]; then
-    echo "  2) Qwen 3 (32B FP8)           - Near-lossless quality (~32 GB)"
-else
-    echo -e "  2) Qwen 3 (32B FP8)           - ${RED}Requires ~40 GB VRAM${NC}"
-fi
-
-# 3) Qwen 3.5 35B MoE AWQ — tiny active params, fits almost anywhere
-# 4) Qwen 3.5 122B MoE AWQ — flagship MoE, needs ~60 GB
-echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
-if [ "$TOTAL_VRAM" -ge 80 ]; then
-    echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
-else
-    echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
-fi
-
-# 5) DeepSeek R1 70B AWQ — reasoning specialist
-if [ "$TOTAL_VRAM" -ge 40 ]; then
-    echo "  5) DeepSeek R1 (70B AWQ)      - Reasoning specialist (~38 GB)"
-else
-    echo -e "  5) DeepSeek R1 (70B AWQ)      - ${RED}Requires ~40 GB VRAM${NC}"
-fi
-
-echo "  6) Custom                      - Enter a HuggingFace model ID"
-echo "  7) Skip                        - I'll configure via .env later"
+show_vllm_model_menu
 echo ""
 read -p "Select [1-7]: " CHOICE
 
-MODEL_ID=""
-PARALLEL=$GPU_COUNT
-MODEL_SIZE_GB=0      # Approximate weight size in GB for memory planning
-TOOL_CALL_ARGS=""    # vLLM tool call parser args (auto-set per model)
-REASONING_ARGS=""    # vLLM reasoning parser (e.g. --reasoning-parser qwen3)
-EXTRA_VLLM_ARGS=""   # Additional vLLM args (e.g. --language-model-only)
-DTYPE="auto"         # Data type (auto, float16, bfloat16) — AWQ requires float16
-VLLM_IMAGE="latest"  # Docker image tag (nightly for new architectures)
-case $CHOICE in
-    1) MODEL_ID="Qwen/Qwen3-8B"; PARALLEL=1; MODEL_SIZE_GB=16
-       TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes" ;;
-    2)
-        if [ "$TOTAL_VRAM" -lt 40 ]; then
-            echo -e "${RED}✗ Qwen 3 32B FP8 requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-            exit 1
-        fi
-        MODEL_ID="Qwen/Qwen3-32B-FP8"; MODEL_SIZE_GB=32
-        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        ;;
-    3)
-        MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=22; PARALLEL=$GPU_COUNT
-        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-        REASONING_ARGS="--reasoning-parser qwen3"
-        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
-        DTYPE="float16"
-        VLLM_IMAGE="${NIGHTLY_PREFIX}"
-        ;;
-    4)
-        if [ "$TOTAL_VRAM" -lt 80 ]; then
-            echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-            exit 1
-        fi
-        MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; MODEL_SIZE_GB=60
-        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-        REASONING_ARGS="--reasoning-parser qwen3"
-        EXTRA_VLLM_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
-        DTYPE="float16"
-        VLLM_IMAGE="${NIGHTLY_PREFIX}"
-        ;;
-    5)
-        if [ "$TOTAL_VRAM" -lt 40 ]; then
-            echo -e "${RED}✗ DeepSeek R1 70B AWQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-            exit 1
-        fi
-        MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; MODEL_SIZE_GB=38
-        TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-        ;;
-    6) read -p "  Enter HuggingFace model ID: " MODEL_ID ;;
-    *) echo "Exiting."; exit 0 ;;
-esac
-
-if [ -z "$MODEL_ID" ]; then
-    echo -e "${RED}No model selected.${NC}"
+if ! select_vllm_model "$CHOICE"; then
+    if [ -z "$VLLM_MODEL_ID" ]; then
+        echo "Exiting."; exit 0
+    fi
+    # VRAM insufficient — exit
     exit 1
 fi
 
-# --- Auto-tune GPU memory settings based on model size vs available VRAM ---
-AVAILABLE_VRAM=$((VRAM_GB * PARALLEL))
-
-# Calculate optimal GPU memory utilization and context length
-GPU_MEM_UTIL="0.90"    # Default: 90%
-MAX_CTX=32768          # Default context length
-
-if [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
-    # How much of VRAM do weights need? (as percentage)
-    WEIGHT_PCT=$((MODEL_SIZE_GB * 100 / AVAILABLE_VRAM))
-    
-    if [ "$WEIGHT_PCT" -ge 85 ]; then
-        # Tight — high utilization, reduced context
-        GPU_MEM_UTIL="0.95"
-        MAX_CTX=8192
-    elif [ "$WEIGHT_PCT" -ge 70 ]; then
-        # Tight — high utilization, reduced context
-        GPU_MEM_UTIL="0.92"
-        MAX_CTX=16384
-    else
-        # Comfortable fit
-        GPU_MEM_UTIL="0.90"
-        MAX_CTX=32768
-    fi
+if [ -z "$VLLM_MODEL_ID" ]; then
+    echo -e "${RED}No model selected.${NC}"
+    exit 1
 fi
-
-# Qwen 3.5 MoE note: hybrid GDN+attention uses more memory per token than pure
-# attention models, and Triton autotuner needs scratch space. Keep moderate context.
-case "$MODEL_ID" in
-    cyankiwi/Qwen3.5-*)
-        if [ "$MAX_CTX" -gt 16384 ]; then
-            MAX_CTX=16384
-            echo -e "${YELLOW}  Note: Qwen 3.5 MoE context capped to ${MAX_CTX} tokens (hybrid GDN+attention memory)${NC}"
-        fi
-        ;;
-esac
 
 # --- Write Config ---
 echo ""
@@ -196,31 +77,31 @@ cat > .env <<EOF
 # Generated by init.sh on $(date)
 
 # Model to serve (HuggingFace model ID)
-MODEL_ID=${MODEL_ID}
+MODEL_ID=${VLLM_MODEL_ID}
 
 # vLLM Docker image tag (latest or nightly for bleeding-edge models)
 VLLM_IMAGE=${VLLM_IMAGE}
 
 # Number of GPUs for tensor parallelism
-GPU_COUNT=${PARALLEL}
+GPU_COUNT=${VLLM_GPU_COUNT}
 
 # Maximum context length (tokens)
-MAX_CONTEXT=${MAX_CTX}
+MAX_CONTEXT=${VLLM_MAX_CTX}
 
-# GPU memory utilization (0.0-1.0, auto-tuned for ${MODEL_SIZE_GB}GB model on ${AVAILABLE_VRAM}GB VRAM)
-GPU_MEMORY_UTILIZATION=${GPU_MEM_UTIL}
+# GPU memory utilization (0.0-1.0, auto-tuned for ${VLLM_MODEL_SIZE_GB}GB model on $((VRAM_GB * VLLM_GPU_COUNT))GB VRAM)
+GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEM_UTIL}
 
 # Reasoning parser (e.g. Qwen3.5 thinking mode)
-REASONING_ARGS=${REASONING_ARGS}
+REASONING_ARGS=${VLLM_REASONING_ARGS}
 
 # Tool call parser and auto-tool-choice (auto-set per model)
-TOOL_CALL_ARGS=${TOOL_CALL_ARGS}
+TOOL_CALL_ARGS=${VLLM_TOOL_CALL_ARGS}
 
 # Extra vLLM args (e.g. --language-model-only for text-only Qwen3.5)
-EXTRA_VLLM_ARGS=${EXTRA_VLLM_ARGS}
+EXTRA_VLLM_ARGS=${VLLM_EXTRA_ARGS}
 
 # Data type (auto, float16, bfloat16) — AWQ models require float16
-DTYPE=${DTYPE}
+DTYPE=${VLLM_DTYPE}
 
 # Cache proxy (optional, for faster model downloads)
 # CACHE_PROXY=http://<ip>:3128
@@ -233,10 +114,10 @@ fi
 
 echo -e "${GREEN}✓ Configuration written to .env${NC}"
 echo ""
-echo "  Model:    $MODEL_ID"
-echo "  GPUs:     $PARALLEL"
-echo "  Context:  $MAX_CTX tokens"
-echo "  Memory:   $GPU_MEM_UTIL utilization"
+echo "  Model:    $VLLM_MODEL_ID"
+echo "  GPUs:     $VLLM_GPU_COUNT"
+echo "  Context:  $VLLM_MAX_CTX tokens"
+echo "  Memory:   $VLLM_GPU_MEM_UTIL utilization"
 echo ""
 
 read -p "Start the stack now? (Y/n): " START
@@ -364,12 +245,12 @@ if [[ "$START" != "n" && "$START" != "N" ]]; then
             esac
             
             # If significant network activity, show download progress
-            if [ "$NET_GB" -gt 0 ] 2>/dev/null && [ "$MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
-                DL_PCT=$((NET_GB * 100 / MODEL_SIZE_GB))
+            if [ "$NET_GB" -gt 0 ] 2>/dev/null && [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+                DL_PCT=$((NET_GB * 100 / VLLM_MODEL_SIZE_GB))
                 [ "$DL_PCT" -gt 100 ] && DL_PCT=100
                 CANDIDATE_PHASE="Downloading model"
                 CANDIDATE_LEVEL=1
-                DETAIL="${DL_PCT}% (${NET_RX} / ${MODEL_SIZE_GB} GB)"
+                DETAIL="${DL_PCT}% (${NET_RX} / ${VLLM_MODEL_SIZE_GB} GB)"
             elif [ -n "$NET_VAL" ] && echo "$NET_UNIT" | grep -qiE "MB|MiB" 2>/dev/null; then
                 # Sub-GB download — show raw value
                 NET_MB=$(echo "$NET_VAL" | cut -d. -f1)

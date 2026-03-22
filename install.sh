@@ -16,6 +16,7 @@ INSTALLER_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$INSTALLER_DIR/scripts/lib/gpu_detect.sh"
 source "$INSTALLER_DIR/scripts/lib/smart_build.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_monitor.sh"
+source "$INSTALLER_DIR/scripts/lib/vllm_model_select.sh"
 
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${BLUE}   Puget Systems Docker App Pack - Universal Installer${NC}"
@@ -331,6 +332,10 @@ echo -e "\n${YELLOW}[Step 4] Installing...${NC}"
 
 # Copy Core Pack Files
 cp -r "$PACKS_DIR/$FLAVOR/." "$INSTALL_DIR/"
+
+# Copy shared libraries so pack scripts (init.sh) can source them at runtime
+mkdir -p "$INSTALL_DIR/scripts/lib"
+cp "$INSTALLER_DIR/scripts/lib/"*.sh "$INSTALL_DIR/scripts/lib/"
 
 # Create standard .env if it doesn't exist
 if [ ! -f "$INSTALL_DIR/.env" ]; then
@@ -659,144 +664,35 @@ case $FLAVOR in
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
         fi
         echo ""
-        # Model Selection
+        # Model Selection (uses shared library)
         echo -e "${YELLOW}Select a model to serve:${NC}"
         echo ""
-        echo "  1) Qwen 3 (8B)                - Fast, single GPU (~16 GB BF16)"
-
-        if [ "$TOTAL_VRAM" -ge 40 ]; then
-            echo "  2) Qwen 3 (32B FP8)           - Near-lossless quality (~32 GB)"
-        else
-            echo -e "  2) Qwen 3 (32B FP8)           - ${RED}Requires ~40 GB VRAM${NC}"
-        fi
-
-        DIM='\033[2m'
-        if [ "$IS_BLACKWELL" = true ]; then
-            echo -e "  ${DIM}3) Qwen 3.5 (35B MoE AWQ)     - Coming Soon (Blackwell kernel support pending)${NC}"
-            echo -e "  ${DIM}4) Qwen 3.5 (122B MoE AWQ)    - Coming Soon (Blackwell kernel support pending)${NC}"
-        else
-            echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
-            if [ "$TOTAL_VRAM" -ge 80 ]; then
-                echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
-            else
-                echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
-            fi
-        fi
-
-        if [ "$TOTAL_VRAM" -ge 40 ]; then
-            echo "  5) DeepSeek R1 (70B AWQ)      - Reasoning specialist (~38 GB)"
-        else
-            echo -e "  5) DeepSeek R1 (70B AWQ)      - ${RED}Requires ~40 GB VRAM${NC}"
-        fi
-
-        echo "  6) Custom                      - Enter a HuggingFace model ID"
-        echo "  7) Skip                        - I'll configure via .env later"
+        show_vllm_model_menu
         echo ""
         read -p "Select [1-7]: " VLLM_MODEL_SELECT
-        
-        VLLM_MODEL_ID=""
-        VLLM_GPU_COUNT=1
-        VLLM_MODEL_SIZE_GB=0
-        VLLM_TOOL_CALL_ARGS=""
-        VLLM_REASONING_ARGS=""
-        VLLM_EXTRA_ARGS=""
-        VLLM_DTYPE="auto"
-        VLLM_IMAGE="latest"
-        case $VLLM_MODEL_SELECT in
-            1) VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16
-               VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes" ;;
-            2)
-                if [ "$TOTAL_VRAM" -lt 40 ]; then
-                    echo -e "${RED}✗ Qwen 3 32B FP8 requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                else
-                    VLLM_MODEL_ID="Qwen/Qwen3-32B-FP8"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=32
-                    VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                fi
-                ;;
-            3)
-                if [ "$IS_BLACKWELL" = true ]; then
-                    echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
-                    echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
-                fi
-                VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=22
-                VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-                VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-                VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
-                VLLM_DTYPE="float16"
-                VLLM_IMAGE="${NIGHTLY_PREFIX}"
-                ;;
-            4)
-                if [ "$IS_BLACKWELL" = true ]; then
-                    echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
-                    echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
-                fi
-                if [ "$TOTAL_VRAM" -lt 80 ]; then
-                    echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                else
-                    VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=60
-                    VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-                    VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-                    VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
-                    VLLM_DTYPE="float16"
-                    VLLM_IMAGE="${NIGHTLY_PREFIX}"
-                fi
-                ;;
-            5)
-                if [ "$TOTAL_VRAM" -lt 40 ]; then
-                    echo -e "${RED}✗ DeepSeek R1 70B AWQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                else
-                    VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_GPU_COUNT=$GPU_COUNT; VLLM_MODEL_SIZE_GB=38
-                    VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-                fi
-                ;;
-            6) read -p "  Enter HuggingFace model ID: " VLLM_MODEL_ID ;;
-            *) echo "Skipping model configuration. Edit .env before starting." ;;
-        esac
-        
-        if [ -n "$VLLM_MODEL_ID" ]; then
-            # Auto-tune GPU memory settings based on model size vs available VRAM
-            AVAILABLE_VRAM=$((VRAM_GB * VLLM_GPU_COUNT))
-            GPU_MEM_UTIL="0.90"
-            MAX_CTX=32768
-            
-            if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
-                WEIGHT_PCT=$((VLLM_MODEL_SIZE_GB * 100 / AVAILABLE_VRAM))
-                
-                if [ "$WEIGHT_PCT" -ge 85 ]; then
-                    GPU_MEM_UTIL="0.95"
-                    MAX_CTX=8192
-                elif [ "$WEIGHT_PCT" -ge 70 ]; then
-                    GPU_MEM_UTIL="0.92"
-                    MAX_CTX=16384
-                else
-                    GPU_MEM_UTIL="0.90"
-                    MAX_CTX=32768
-                fi
-            fi
-            
-            # Qwen 3.5 MoE: hybrid GDN+attention uses more memory per token.
-            case "$VLLM_MODEL_ID" in
-                cyankiwi/Qwen3.5-*)
-                    if [ "$MAX_CTX" -gt 16384 ]; then
-                        MAX_CTX=16384
-                    fi
-                    ;;
-            esac
-            
+
+        if select_vllm_model "$VLLM_MODEL_SELECT"; then
             echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
             echo "VLLM_IMAGE=$VLLM_IMAGE" >> "$INSTALL_DIR/.env"
             echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
-            echo "MAX_CONTEXT=$MAX_CTX" >> "$INSTALL_DIR/.env"
-            echo "GPU_MEMORY_UTILIZATION=$GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
+            echo "MAX_CONTEXT=$VLLM_MAX_CTX" >> "$INSTALL_DIR/.env"
+            echo "GPU_MEMORY_UTILIZATION=$VLLM_GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
             echo "REASONING_ARGS=$VLLM_REASONING_ARGS" >> "$INSTALL_DIR/.env"
             echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
             echo "EXTRA_VLLM_ARGS=$VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
             echo "DTYPE=$VLLM_DTYPE" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
-            echo -e "  Memory: ${GPU_MEM_UTIL} utilization, ${MAX_CTX} context tokens"
+            echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${VLLM_MAX_CTX} context tokens"
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
             echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
             echo -e "  The model will download on first launch."
+        elif [ -n "$VLLM_MODEL_ID" ]; then
+            # Custom model (return code 2) — write what we have
+            echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
+            echo -e "${GREEN}✓ Custom model: $VLLM_MODEL_ID${NC}"
+            echo -e "  Edit .env to configure GPU count, context, and memory settings."
+        else
+            echo "Skipping model configuration. Edit .env before starting."
         fi
         ;;
     docker-base)
