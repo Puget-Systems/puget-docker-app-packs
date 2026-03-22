@@ -74,18 +74,11 @@ fi
 
 # 3) Qwen 3.5 35B MoE AWQ — tiny active params, fits almost anywhere
 # 4) Qwen 3.5 122B MoE AWQ — flagship MoE, needs ~60 GB
-# Note: Qwen 3.5 MoE uses GDN attention kernels that are not yet compatible with Blackwell GPUs
-DIM='\033[2m'  # dim text
-if [ "$IS_BLACKWELL" = true ]; then
-    echo -e "  ${DIM}3) Qwen 3.5 (35B MoE AWQ)     - Coming Soon (Blackwell kernel support pending)${NC}"
-    echo -e "  ${DIM}4) Qwen 3.5 (122B MoE AWQ)    - Coming Soon (Blackwell kernel support pending)${NC}"
+echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
+if [ "$TOTAL_VRAM" -ge 80 ]; then
+    echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
 else
-    echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, fast (~18 GB)"
-    if [ "$TOTAL_VRAM" -ge 80 ]; then
-        echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active (~60 GB) [Recommended]"
-    else
-        echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
-    fi
+    echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
 fi
 
 # 5) DeepSeek R1 70B AWQ — reasoning specialist
@@ -120,11 +113,6 @@ case $CHOICE in
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
         ;;
     3)
-        if [ "$IS_BLACKWELL" = true ]; then
-            echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
-            echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
-            exit 1
-        fi
         MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; MODEL_SIZE_GB=22; PARALLEL=$GPU_COUNT
         TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
         REASONING_ARGS="--reasoning-parser qwen3"
@@ -133,11 +121,6 @@ case $CHOICE in
         VLLM_IMAGE="${NIGHTLY_PREFIX}"
         ;;
     4)
-        if [ "$IS_BLACKWELL" = true ]; then
-            echo -e "${YELLOW}✗ Qwen 3.5 MoE is not yet supported on Blackwell GPUs (GDN kernel compatibility pending).${NC}"
-            echo -e "  Please select a different model. Qwen 3 32B FP8 (option 2) is recommended."
-            exit 1
-        fi
         if [ "$TOTAL_VRAM" -lt 80 ]; then
             echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
             exit 1
