@@ -9,6 +9,11 @@ wait_for_vllm() {
     local CONTAINER_NAME="${1:?Usage: wait_for_vllm <container_name> <model_size_gb>}"
     local MODEL_SIZE_GB="${2:-0}"
 
+    # Disable set -e for the monitoring loop — polling commands (grep -q,
+    # docker stats, curl) routinely return non-zero and must not kill the script.
+    local OLD_OPTS=$(set +o)
+    set +e
+
     local READY=false
     local LAST_PHASE=""
     local PHASE_LEVEL=0           # Monotonic: phases only advance forward
@@ -184,4 +189,6 @@ wait_for_vllm() {
         sleep 3
     done
     echo ""
+    # Restore previous shell options
+    eval "$OLD_OPTS"
 }
