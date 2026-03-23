@@ -121,11 +121,16 @@ select_vllm_model() {
         fi
     fi
 
-    # Qwen 3.5 MoE: hybrid GDN+attention uses more memory per token
+    # Qwen 3.5 MoE: hybrid GDN+attention uses more KV cache per token than
+    # pure attention. Cap context based on available headroom:
+    #   weight_pct < 50%  → comfortable headroom, allow 32768
+    #   weight_pct 50-69% → moderate, cap to 24576
+    #   weight_pct >= 70% → tight (already capped to 16384/8192 above)
     case "$VLLM_MODEL_ID" in
         cyankiwi/Qwen3.5-*)
-            if [ "$VLLM_MAX_CTX" -gt 16384 ]; then
-                VLLM_MAX_CTX=16384
+            local weight_pct_moe=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))
+            if [ "$weight_pct_moe" -ge 50 ] && [ "$VLLM_MAX_CTX" -gt 24576 ]; then
+                VLLM_MAX_CTX=24576
             fi
             ;;
     esac
