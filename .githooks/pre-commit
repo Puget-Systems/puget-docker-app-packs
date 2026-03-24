@@ -1,0 +1,11 @@
+#!/bin/bash
+# Auto-update install.sh.md5 when install.sh is committed
+
+if git diff --cached --name-only | grep -q "^install\.sh$"; then
+    REPO_ROOT="$(git rev-parse --show-toplevel)"
+    # Generate checksum from the staged version of install.sh
+    HASH=$(git show :install.sh | md5sum | awk '{print $1}')
+    echo "$HASH  install.sh" > "$REPO_ROOT/install.sh.md5"
+    git add "$REPO_ROOT/install.sh.md5"
+    echo "✓ Auto-updated install.sh.md5"
+fi

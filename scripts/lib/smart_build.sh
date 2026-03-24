@@ -15,20 +15,20 @@ smart_build() {
         SAVED_FP=$(cat .build_fingerprint)
     fi
 
+    local BUILD_EXIT=0
     if [ -z "$SAVED_FP" ]; then
         # First build — use normal layer-cached build
         echo -e "${BLUE}Building container...${NC}"
-        docker compose build
+        docker compose build || BUILD_EXIT=$?
     elif [ "$CURRENT_FP" != "$SAVED_FP" ]; then
         echo -e "${YELLOW}⚠ Build configuration has changed since last build.${NC}"
         echo -e "${BLUE}Rebuilding container (--no-cache)...${NC}"
-        docker compose build --no-cache
+        docker compose build --no-cache || BUILD_EXIT=$?
     else
         # No changes — skip build entirely
         return 0
     fi
 
-    local BUILD_EXIT=$?
     if [ $BUILD_EXIT -ne 0 ]; then
         echo -e "${RED}✗ Build failed (exit code $BUILD_EXIT).${NC}"
         return $BUILD_EXIT

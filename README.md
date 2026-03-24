@@ -1,5 +1,7 @@
 # Puget Systems Docker App Packs
 
+**v1.0.1**
+
 A standardized, high-performance starter template system for AI and engineering workflows on Puget Systems workstations.
 
 ## Overview
@@ -96,17 +98,42 @@ curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack
 
 ---
 
+## Integrity Verification
+
+The bootstrap installer (`setup.sh`) automatically verifies the integrity of `install.sh` using an MD5 checksum before launching it. If the checksum doesn't match, the installer will exit with an error.
+
+### For Developers
+
+After editing `install.sh`, the checksum must be updated. This happens **automatically** via a git pre-commit hook. To activate the hook on a fresh clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Or update manually:
+
+```bash
+scripts/update_checksum.sh
+```
+
+---
+
 ## Repository Structure
 
 ```text
 .
-├── setup.sh               # Bootstrap script (curl-friendly)
-├── install.sh             # Universal Interactive Installer
-├── packs/                 # Flavor Templates
-│   ├── docker-base/       # Ubuntu 24.04 LTS Foundation
-│   ├── comfy_ui/          # Creative Stack (CUDA + ComfyUI)
-│   ├── personal_llm/      # Personal LLM (Ollama + Open WebUI)
-│   └── team_llm/          # Team LLM (vLLM + Open WebUI)
-├── SOP_AI_PRELOAD_v0.5.0.md  # Puget Systems internal SOP
+├── setup.sh                   # Bootstrap script (curl-friendly)
+├── install.sh                 # Universal Interactive Installer
+├── install.sh.md5             # MD5 checksum for integrity verification
+├── packs/                     # Flavor Templates
+│   ├── docker-base/           # Ubuntu 24.04 LTS Foundation
+│   ├── comfy_ui/              # Creative Stack (CUDA + ComfyUI)
+│   ├── personal_llm/          # Personal LLM (Ollama + Open WebUI)
+│   └── team_llm/              # Team LLM (vLLM + Open WebUI)
+├── scripts/
+│   ├── update_checksum.sh     # Regenerate install.sh.md5
+│   └── lib/                   # Shared installer helpers
+├── .githooks/
+│   └── pre-commit             # Auto-updates checksum on commit
 └── README.md
 ```
