@@ -104,7 +104,9 @@ select_vllm_model() {
             ;;
         6)
             VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"; VLLM_MODEL_SIZE_GB=25
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         7)
@@ -113,7 +115,9 @@ select_vllm_model() {
                 return 1
             fi
             VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"; VLLM_MODEL_SIZE_GB=60
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         8)
