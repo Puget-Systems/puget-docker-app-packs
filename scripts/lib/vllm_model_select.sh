@@ -103,7 +103,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
             ;;
         6)
-            VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=20
+            VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"; VLLM_MODEL_SIZE_GB=25
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
