@@ -675,14 +675,17 @@ case $FLAVOR in
             echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
             echo "VLLM_IMAGE=$VLLM_IMAGE" >> "$INSTALL_DIR/.env"
             echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
-            echo "MAX_CONTEXT=$VLLM_MAX_CTX" >> "$INSTALL_DIR/.env"
+            if [ -n "$VLLM_MAX_CTX" ]; then
+                echo "MAX_CONTEXT=$VLLM_MAX_CTX" >> "$INSTALL_DIR/.env"
+            fi
             echo "GPU_MEMORY_UTILIZATION=$VLLM_GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
             echo "REASONING_ARGS=$VLLM_REASONING_ARGS" >> "$INSTALL_DIR/.env"
             echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
             echo "EXTRA_VLLM_ARGS=$VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
             echo "DTYPE=$VLLM_DTYPE" >> "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
-            echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${VLLM_MAX_CTX} context tokens"
+            local ctx_display=${VLLM_MAX_CTX:-auto (vLLM will size based on available VRAM)}
+            echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${ctx_display} context"
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
             echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
             echo -e "  The model will download on first launch."
