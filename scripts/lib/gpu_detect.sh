@@ -20,6 +20,16 @@ detect_gpus() {
     GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
     GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
     VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+
+    # Unified memory GPUs (e.g., NVIDIA GB10 / DGX Spark) report [N/A] for VRAM.
+    # Fall back to total system RAM since unified memory = all RAM is GPU-accessible.
+    if [[ "$VRAM_MB" == *"N/A"* ]] || [[ -z "$VRAM_MB" ]] || ! [[ "$VRAM_MB" =~ ^[0-9]+$ ]]; then
+        VRAM_MB=$(awk '/MemTotal/ {printf "%.0f", $2/1024}' /proc/meminfo 2>/dev/null || echo "0")
+        IS_UNIFIED_MEMORY=true
+    else
+        IS_UNIFIED_MEMORY=false
+    fi
+
     VRAM_GB=$((VRAM_MB / 1024))
     TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
 
