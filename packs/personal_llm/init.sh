@@ -15,14 +15,15 @@ fi
 echo ""
 
 echo "Select a model to download:"
-echo "  1) Qwen 3 (8B)         - Fast, Low VRAM (~5 GB)"
-echo "  2) Qwen 3 (32B)        - Best Quality, Single GPU (~20 GB) [Recommended]"
-echo "  3) DeepSeek R1 (70B)   - Flagship Reasoning, Dual GPU (~42 GB)"
-echo "  4) Llama 4 Scout       - Multimodal (text+image), Dual GPU (~63 GB)"
-echo "  5) Nemotron 3 Nano     - Long Context + Agentic (~20 GB)"
-echo "  6) Exit"
+echo "  1) Qwen 3 (8B)           - Fast, Low VRAM (~5 GB)"
+echo "  2) Qwen 3 (32B)          - Best Quality, Single GPU (~20 GB) [Recommended]"
+echo "  3) DeepSeek R1 (70B)     - Flagship Reasoning, Dual GPU (~42 GB)"
+echo "  4) Llama 4 Scout         - Multimodal (text+image), Dual GPU (~63 GB)"
+echo "  5) Nemotron 3 Nano (30B) - NVIDIA MoE Reasoning, Single GPU (~24 GB)"
+echo "  6) Nemotron 3 Super      - NVIDIA Flagship MoE, Multi-GPU (~96 GB)"
+echo "  7) Exit"
 echo ""
-read -p "Select [1-6]: " CHOICE
+read -p "Select [1-7]: " CHOICE
 
 TAG=""
 case $CHOICE in
@@ -30,7 +31,8 @@ case $CHOICE in
     2) TAG="qwen3:32b" ;;
     3) TAG="deepseek-r1:70b" ;;
     4) TAG="llama4:scout" ;;
-    5) TAG="nemotron-3-nano" ;;
+    5) TAG="nemotron-3-nano:30b" ;;
+    6) TAG="nemotron-3-super" ;;
     *) echo "Exiting."; exit 0 ;;
 esac
 
