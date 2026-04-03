@@ -37,7 +37,23 @@ case $CHOICE in
 esac
 
 echo "Pulling $TAG... (this may take a while for larger models)"
-docker compose exec -it inference ollama pull "$TAG"
+
+# Wait for Ollama server to be ready
+echo "Waiting for Ollama server to be ready..."
+for i in $(seq 1 30); do
+    if docker compose exec inference ollama list &>/dev/null; then
+        echo "✓ Ollama server is ready."
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        echo "✗ Ollama server did not become ready in time."
+        echo "  Check: docker compose logs inference"
+        exit 1
+    fi
+    sleep 1
+done
+
+docker compose exec inference ollama pull "$TAG"
 
 echo ""
 echo "Model ready!"

@@ -785,6 +785,24 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 esac
 
                 if [[ -n "$MODEL_TAG" ]]; then
+                     # Wait for Ollama server to be ready before pulling
+                     echo -e "${BLUE}Waiting for Ollama server to be ready...${NC}"
+                     for i in $(seq 1 30); do
+                         if docker compose exec inference ollama list &>/dev/null; then
+                             echo -e "${GREEN}✓ Ollama server is ready.${NC}"
+                             break
+                         fi
+                         if [ "$i" -eq 30 ]; then
+                             echo -e "${RED}✗ Ollama server did not become ready in time.${NC}"
+                             echo "  Try running: docker compose exec inference ollama pull $MODEL_TAG"
+                             MODEL_TAG=""
+                             break
+                         fi
+                         sleep 1
+                     done
+                fi
+
+                if [[ -n "$MODEL_TAG" ]]; then
                      echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
                      docker compose exec inference ollama pull "$MODEL_TAG"
                      echo -e "${GREEN}✓ Model ready.${NC}"
