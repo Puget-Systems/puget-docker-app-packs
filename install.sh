@@ -18,6 +18,7 @@ source "$INSTALLER_DIR/scripts/lib/smart_build.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_monitor.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_model_select.sh"
 source "$INSTALLER_DIR/scripts/lib/ollama_model_select.sh"
+source "$INSTALLER_DIR/scripts/lib/env_write.sh"
 
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${BLUE}   Puget Systems Docker App Pack - Universal Installer${NC}"
@@ -340,7 +341,7 @@ cp "$INSTALLER_DIR/scripts/lib/"*.sh "$INSTALL_DIR/scripts/lib/"
 
 # Reset .env to a clean state on each install/re-install
 # This prevents duplicate entries from stacking on re-runs
-echo "PUGET_APP_NAME=$INSTALL_DIR" > "$INSTALL_DIR/.env"
+write_env_header "$INSTALL_DIR" "$INSTALL_DIR/.env"
 
 echo -e "${GREEN}Success! Application installed to '$INSTALL_DIR'.${NC}"
 
@@ -624,22 +625,7 @@ case $FLAVOR in
         echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
         echo ""
         # Cache Proxy Configuration (optional)
-        echo -e "${YELLOW}Cache Proxy (Optional):${NC}"
-        echo "  If this system is on a LAN with a Puget cache proxy (Squid),"
-        echo "  model downloads can be cached to avoid re-downloading."
-        echo "  Example: http://172.19.168.179:3128"
-        while true; do
-            read -p "  Enter cache proxy URL (or press Enter to skip): " CACHE_URL
-            if [ -z "$CACHE_URL" ]; then
-                break
-            elif echo "$CACHE_URL" | grep -qE '^https?://[a-zA-Z0-9._-]+(:[0-9]+)?/?$'; then
-                echo "CACHE_PROXY=$CACHE_URL" >> "$INSTALL_DIR/.env"
-                echo -e "${GREEN}✓ Cache proxy configured: $CACHE_URL${NC}"
-                break
-            else
-                echo -e "${RED}  ✗ Invalid URL format. Must be http://host:port (e.g. http://172.19.168.179:3128)${NC}"
-            fi
-        done
+        prompt_env_proxy "$INSTALL_DIR/.env" || true
         echo ""
         # GPU Detection
         echo -e "${YELLOW}GPU Configuration:${NC}"
@@ -660,22 +646,7 @@ case $FLAVOR in
         echo "Production inference with multi-GPU tensor parallelism."
         echo ""
         # Cache Proxy Configuration (optional)
-        echo -e "${YELLOW}Cache Proxy (Optional):${NC}"
-        echo "  If this system is on a LAN with a Puget cache proxy (Squid),"
-        echo "  model downloads can be cached to avoid re-downloading."
-        echo "  Example: http://172.19.168.179:3128"
-        while true; do
-            read -p "  Enter cache proxy URL (or press Enter to skip): " CACHE_URL
-            if [ -z "$CACHE_URL" ]; then
-                break
-            elif echo "$CACHE_URL" | grep -qE '^https?://[a-zA-Z0-9._-]+(:[0-9]+)?/?$'; then
-                echo "CACHE_PROXY=$CACHE_URL" >> "$INSTALL_DIR/.env"
-                echo -e "${GREEN}✓ Cache proxy configured: $CACHE_URL${NC}"
-                break
-            else
-                echo -e "${RED}  ✗ Invalid URL format. Must be http://host:port (e.g. http://172.19.168.179:3128)${NC}"
-            fi
-        done
+        prompt_env_proxy "$INSTALL_DIR/.env" || true
         echo ""
         # GPU Detection
         echo -e "${YELLOW}GPU Configuration:${NC}"
@@ -696,20 +667,18 @@ case $FLAVOR in
         echo ""
         show_vllm_model_menu
         echo ""
-        read -p "Select [1-10]: " VLLM_MODEL_SELECT
+        read -p "Select [1-${MENU_MAX}]: " VLLM_MODEL_SELECT
 
         if select_vllm_model "$VLLM_MODEL_SELECT"; then
-            echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
-            echo "VLLM_IMAGE=$VLLM_IMAGE" >> "$INSTALL_DIR/.env"
-            echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
-            if [ -n "$VLLM_MAX_CTX" ]; then
-                echo "MAX_CONTEXT=$VLLM_MAX_CTX" >> "$INSTALL_DIR/.env"
-            fi
-            echo "GPU_MEMORY_UTILIZATION=$VLLM_GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
-            echo "REASONING_ARGS=$VLLM_REASONING_ARGS" >> "$INSTALL_DIR/.env"
-            echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
-            echo "EXTRA_VLLM_ARGS=$VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
-            echo "DTYPE=$VLLM_DTYPE" >> "$INSTALL_DIR/.env"
+            write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
+            write_env_var "VLLM_IMAGE" "$VLLM_IMAGE" "$INSTALL_DIR/.env"
+            write_env_var "GPU_COUNT" "$VLLM_GPU_COUNT" "$INSTALL_DIR/.env"
+            write_env_var "MAX_CONTEXT" "$VLLM_MAX_CTX" "$INSTALL_DIR/.env"
+            write_env_var "GPU_MEMORY_UTILIZATION" "$VLLM_GPU_MEM_UTIL" "$INSTALL_DIR/.env"
+            write_env_var "REASONING_ARGS" "$VLLM_REASONING_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
             ctx_display=${VLLM_MAX_CTX:-auto (vLLM will size based on available VRAM)}
             echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${ctx_display} context"
@@ -718,7 +687,7 @@ case $FLAVOR in
             echo -e "  The model will download on first launch."
         elif [ -n "$VLLM_MODEL_ID" ]; then
             # Custom model (return code 2) — write what we have
-            echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
+            write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Custom model: $VLLM_MODEL_ID${NC}"
             echo -e "  Edit .env to configure GPU count, context, and memory settings."
         else
@@ -739,6 +708,13 @@ read -p "Would you like to build and start the container now? (Y/n): " START_NOW
 if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     echo -e "${BLUE}Building and starting container in background...${NC}"
     cd "$INSTALL_DIR"
+
+    # Validate .env before launch — catch stacking/corruption early
+    if ! validate_env ".env"; then
+        echo -e "${RED}Fix .env issues before launching.${NC}"
+        cd - > /dev/null
+        exit 1
+    fi
     
     # Check for container name conflicts (since we use static names in some packs)
     # We try to get the container name from docker-compose.yml if possible, or just handle the error
@@ -793,7 +769,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 echo ""
                 show_ollama_model_menu
                 echo ""
-                read -p "Select a model [1-7]: " MODEL_SELECT
+                read -p "Select a model [1-${MENU_MAX}]: " MODEL_SELECT
 
                 MODEL_TAG=""
                 OLLAMA_SELECT_RC=0

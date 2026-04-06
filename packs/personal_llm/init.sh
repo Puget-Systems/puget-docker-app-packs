@@ -69,7 +69,7 @@ echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
 show_ollama_model_menu
 echo ""
-read -p "Select [1-8]: " CHOICE
+read -p "Select [1-${MENU_MAX}]: " CHOICE
 
 SELECT_RC=0
 select_ollama_model "$CHOICE" || SELECT_RC=$?

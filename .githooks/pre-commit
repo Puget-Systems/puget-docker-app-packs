@@ -1,11 +1,34 @@
 #!/bin/bash
-# Auto-update install.sh.md5 when install.sh is committed
+# Pre-commit hook: Auto-update checksums.md5 when any .sh file is committed.
+# Also runs shellcheck (if available) on changed shell scripts.
 
-if git diff --cached --name-only | grep -q "^install\.sh$"; then
-    REPO_ROOT="$(git rev-parse --show-toplevel)"
-    # Generate checksum from the staged version of install.sh
-    HASH=$(git show :install.sh | md5sum | awk '{print $1}')
-    echo "$HASH  install.sh" > "$REPO_ROOT/install.sh.md5"
-    git add "$REPO_ROOT/install.sh.md5"
-    echo "✓ Auto-updated install.sh.md5"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Detect staged .sh files (Added, Copied, Modified, Renamed)
+CHANGED_SH=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.sh$' || true)
+
+if [ -n "$CHANGED_SH" ]; then
+    # Regenerate checksums.md5 from the working tree
+    # (update_checksum.sh operates on working tree files)
+    bash "$REPO_ROOT/scripts/update_checksum.sh"
+    git add "$REPO_ROOT/checksums.md5"
+    echo "✓ Auto-updated checksums.md5"
+
+    # Run shellcheck if available (warnings only, don't block commit)
+    if command -v shellcheck &>/dev/null; then
+        LINT_FAIL=false
+        for f in $CHANGED_SH; do
+            if [ -f "$REPO_ROOT/$f" ]; then
+                if ! shellcheck -S warning "$REPO_ROOT/$f" 2>/dev/null; then
+                    echo "⚠ ShellCheck warnings in $f"
+                    LINT_FAIL=true
+                fi
+            fi
+        done
+        if [ "$LINT_FAIL" = true ]; then
+            echo ""
+            echo "ShellCheck found warnings. Commit proceeding (advisory only)."
+            echo "Install shellcheck with: brew install shellcheck (macOS) / apt install shellcheck (Ubuntu)"
+        fi
+    fi
 fi

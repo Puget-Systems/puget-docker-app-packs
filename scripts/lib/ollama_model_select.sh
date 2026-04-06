@@ -50,6 +50,7 @@ show_ollama_model_menu() {
     fi
 
     echo "  8) Skip                  - I'll download models later"
+    MENU_MAX=8
 }
 
 # select_ollama_model <choice>

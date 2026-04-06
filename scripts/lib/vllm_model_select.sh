@@ -47,6 +47,7 @@ show_vllm_model_menu() {
 
     echo "  9) Custom                      - Enter a HuggingFace model ID"
     echo " 10) Skip                        - I'll configure via .env later"
+    MENU_MAX=10
 }
 
 # select_vllm_model <choice>
@@ -132,7 +133,7 @@ select_vllm_model() {
                 return 1
             fi
             VLLM_MODEL_ID="google/gemma-4-26B-A4B-it"; VLLM_MODEL_SIZE_GB=52
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser functiongemma"
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         9)
