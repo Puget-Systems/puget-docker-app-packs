@@ -68,25 +68,58 @@ tar -xzf "$ARCHIVE_PATH" -C "$TEMP_DIR"
 echo -e "${GREEN}Assets acquired.${NC}"
 
 # 3.5. Integrity Check (MD5)
+# Verify all shipped scripts against the checksums manifest.
+# Supports both the new multi-file checksums.md5 and legacy install.sh.md5.
+
 # GitHub archives extract to <repo>-<branch>/ — auto-detect the directory
-# to handle repo renames or branch name sanitization.
 EXTRACT_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
 if [ -z "$EXTRACT_DIR" ]; then
     echo -e "${RED}Error: Archive extraction failed — no directory found.${NC}"
     exit 1
 fi
-CHECKSUM_FILE="$EXTRACT_DIR/install.sh.md5"
+
+CHECKSUM_FILE="$EXTRACT_DIR/checksums.md5"
+LEGACY_CHECKSUM="$EXTRACT_DIR/install.sh.md5"
 
 if [ -f "$CHECKSUM_FILE" ]; then
+    echo -e "${BLUE}Verifying script integrity...${NC}"
+    FAILED=false
+    while IFS= read -r line; do
+        EXPECTED_HASH=$(echo "$line" | awk '{print $1}')
+        FILE_REL=$(echo "$line" | awk '{print $2}')
+        FILE_ABS="$EXTRACT_DIR/$FILE_REL"
+
+        if [ ! -f "$FILE_ABS" ]; then
+            echo -e "  ${RED}✗ Missing: ${FILE_REL}${NC}"
+            FAILED=true
+            continue
+        fi
+
+        ACTUAL_HASH=$(md5sum "$FILE_ABS" | awk '{print $1}')
+        if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+            echo -e "  ${RED}✗ MISMATCH: ${FILE_REL}${NC}"
+            echo -e "    Expected: ${EXPECTED_HASH}"
+            echo -e "    Got:      ${ACTUAL_HASH}"
+            FAILED=true
+        fi
+    done < "$CHECKSUM_FILE"
+
+    if [ "$FAILED" = true ]; then
+        echo -e "${RED}✗ Integrity check FAILED.${NC}"
+        echo -e "  One or more scripts may be corrupted or tampered with."
+        echo -e "  If you just updated scripts, run: ${BLUE}scripts/update_checksum.sh${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ All scripts verified ($(wc -l < "$CHECKSUM_FILE") files).${NC}"
+elif [ -f "$LEGACY_CHECKSUM" ]; then
+    # Backwards compatibility: single-file install.sh.md5
     echo -e "${BLUE}Verifying installer integrity...${NC}"
-    EXPECTED_HASH=$(awk '{print $1}' "$CHECKSUM_FILE")
+    EXPECTED_HASH=$(awk '{print $1}' "$LEGACY_CHECKSUM")
     ACTUAL_HASH=$(md5sum "$EXTRACT_DIR/install.sh" | awk '{print $1}')
     if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
         echo -e "${RED}✗ Integrity check FAILED.${NC}"
         echo -e "  Expected MD5: ${EXPECTED_HASH}"
         echo -e "  Got MD5:      ${ACTUAL_HASH}"
-        echo -e "  The installer may be corrupted or tampered with."
-        echo -e "  If you just updated install.sh, run: ${BLUE}scripts/update_checksum.sh${NC}"
         exit 1
     fi
     echo -e "${GREEN}✓ Installer integrity verified (MD5).${NC}"

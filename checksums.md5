@@ -1,0 +1,11 @@
+69e7bc6137e75c56f27bec30de7b830d  ./install.sh
+d3df7662d0fa72ada26ef507c7f6e08a  ./packs/comfy_ui/init.sh
+4cf73ff0ca9eab640b5ca49513b0054a  ./packs/personal_llm/init.sh
+56e92bc35ce9a8bf683fe82a9e0f4342  ./packs/team_llm/init.sh
+4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
+352fcfb57cb71f9d4e4b4622bd2b9a00  ./scripts/lib/gpu_detect.sh
+cf81df07264c59887f6f79d6c5d704a0  ./scripts/lib/ollama_model_select.sh
+bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
+aa2954e30bc8f218aff15d36166a4b07  ./scripts/lib/vllm_model_select.sh
+bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
+791c94267c1354e336744457e77bf644  ./setup.sh

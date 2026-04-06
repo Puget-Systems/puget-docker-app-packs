@@ -800,7 +800,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                      echo -n "Waiting for Ollama server to be ready"
                      OLLAMA_READY=false
                      for i in $(seq 1 120); do
-                         if docker compose exec inference ollama list &>/dev/null; then
+                         if docker compose exec -T inference ollama list &>/dev/null; then
                              OLLAMA_READY=true
                              echo ""
                              echo -e "${GREEN}✓ Ollama server is ready.${NC}"
@@ -820,7 +820,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
 
                 if [[ -n "$MODEL_TAG" ]]; then
                      echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
-                     docker compose exec inference ollama pull "$MODEL_TAG"
+                     docker compose exec -T inference ollama pull "$MODEL_TAG"
                      echo -e "${GREEN}✓ Model ready.${NC}"
                 else
                      echo -e "Run ${BLUE}./init.sh${NC} later to download models."

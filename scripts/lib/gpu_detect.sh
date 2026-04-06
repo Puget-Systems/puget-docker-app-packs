@@ -20,6 +20,10 @@ detect_gpus() {
     GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
     GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
     VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+    if [ "$VRAM_MB" = "[N/A]" ]; then
+        # Unified memory (e.g. DGX Spark GB10) - hardcode typical usable
+        VRAM_MB=121000
+    fi
     VRAM_GB=$((VRAM_MB / 1024))
     TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
 
