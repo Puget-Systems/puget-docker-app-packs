@@ -38,7 +38,7 @@ if [ -f .env ]; then
     source .env 2>/dev/null
 fi
 
-if [ -n "$CACHE_PROXY" ]; then
+if [ -n "${CACHE_PROXY:-}" ]; then
     echo -e "${GREEN}✓ Cache Proxy: $CACHE_PROXY${NC}"
 else
     echo -e "${YELLOW}⚠ No cache proxy configured (downloads go direct).${NC}"
