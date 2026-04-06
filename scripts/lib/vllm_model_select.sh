@@ -133,6 +133,7 @@ select_vllm_model() {
             fi
             VLLM_MODEL_ID="google/gemma-4-26B-A4B-it"; VLLM_MODEL_SIZE_GB=52
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser functiongemma"
+            VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         9)
             read -p "  Enter HuggingFace model ID: " VLLM_MODEL_ID

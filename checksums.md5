@@ -6,6 +6,6 @@ d3df7662d0fa72ada26ef507c7f6e08a  ./packs/comfy_ui/init.sh
 352fcfb57cb71f9d4e4b4622bd2b9a00  ./scripts/lib/gpu_detect.sh
 1a66856893cdbcbc9d8fd9a9661721a9  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
-1cc1b2f100347b9f9df2c0cb668b8a8c  ./scripts/lib/vllm_model_select.sh
+76659d009cf5768faf199d8e2a38a769  ./scripts/lib/vllm_model_select.sh
 bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
 791c94267c1354e336744457e77bf644  ./setup.sh
