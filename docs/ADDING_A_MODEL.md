@@ -22,7 +22,7 @@ Models must be added to **both** the shared library and all callers.
   - [ ] `VLLM_MODEL_ID` — Full HuggingFace model ID
   - [ ] `VLLM_MODEL_SIZE_GB` — Approximate weight size in GB
   - [ ] `VLLM_TOOL_CALL_ARGS` — Tool call parser (`hermes`, `gemma4`, `qwen3_coder`)
-  - [ ] `VLLM_REASONING_ARGS` — If model supports thinking mode (`--reasoning-parser qwen3`)
+  - [ ] `VLLM_REASONING_ARGS` — If model supports thinking mode (`--reasoning-parser qwen3`, `--reasoning-parser gemma4`)
   - [ ] `VLLM_EXTRA_ARGS` — Special flags (`--language-model-only`, `--enforce-eager`, etc.)
   - [ ] `VLLM_DTYPE` — Data type (`auto` default, `float16` for AWQ models)
   - [ ] `VLLM_IMAGE` — Set to `"${NIGHTLY_PREFIX}"` if model needs nightly vLLM

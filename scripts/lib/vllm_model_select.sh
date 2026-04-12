@@ -134,6 +134,7 @@ select_vllm_model() {
             fi
             VLLM_MODEL_ID="google/gemma-4-26B-A4B-it"; VLLM_MODEL_SIZE_GB=52
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
+            VLLM_REASONING_ARGS="--reasoning-parser gemma4"
             VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
             VLLM_MAX_CTX=16384
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
