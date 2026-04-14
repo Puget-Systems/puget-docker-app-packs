@@ -14,3 +14,4 @@ tmp/
 
 # Build state (per-installation, not tracked)
 .build_fingerprint
+context_portal/

@@ -78,27 +78,42 @@ chmod -R 777 "custom_nodes/ComfyUI-Manager/__manager" 2>/dev/null || true
 echo ""
 echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
 
-if ! command -v nvidia-smi &> /dev/null; then
-    echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
-    exit 1
+# Source shared GPU detection if available
+if [ -f "$_SCRIPT_DIR/scripts/lib/gpu_detect.sh" ]; then
+    source "$_SCRIPT_DIR/scripts/lib/gpu_detect.sh"
+elif [ -f "$_REPO_ROOT/scripts/lib/gpu_detect.sh" ]; then
+    source "$_REPO_ROOT/scripts/lib/gpu_detect.sh"
 fi
 
-GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
-VRAM_GB=$((VRAM_MB / 1024))
-TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
-
-# Detect compute capability (Blackwell = 12.0+)
-COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
-COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
-if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
-    IS_BLACKWELL=true
-    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
-    echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP})${NC}"
+# Use shared detect_gpus if available, otherwise inline fallback
+if type detect_gpus &>/dev/null; then
+    if ! detect_gpus; then
+        echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
+        exit 1
+    fi
 else
-    IS_BLACKWELL=false
-    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+    # Inline fallback for standalone installs (init.sh copied without repo)
+    if ! command -v nvidia-smi &> /dev/null; then
+        echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
+        exit 1
+    fi
+    GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
+    GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+    VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+    VRAM_GB=$((VRAM_MB / 1024))
+    TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
+    COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+    COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
+    if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
+        IS_BLACKWELL=true
+    else
+        IS_BLACKWELL=false
+    fi
+fi
+
+echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+if [ "$IS_BLACKWELL" = true ]; then
+    echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP})${NC}"
 fi
 
 # --- Model Selection ---

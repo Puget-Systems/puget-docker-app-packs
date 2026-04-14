@@ -18,6 +18,7 @@ INIT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$INIT_DIR/scripts/lib/gpu_detect.sh"
 source "$INIT_DIR/scripts/lib/vllm_model_select.sh"
 source "$INIT_DIR/scripts/lib/vllm_monitor.sh"
+source "$INIT_DIR/scripts/lib/env_write.sh"
 
 # --- GPU Detection ---
 echo ""
@@ -38,7 +39,7 @@ if [ -f .env ]; then
     source .env 2>/dev/null
 fi
 
-if [ -n "$CACHE_PROXY" ]; then
+if [ -n "${CACHE_PROXY:-}" ]; then
     echo -e "${GREEN}✓ Cache Proxy: $CACHE_PROXY${NC}"
 else
     echo -e "${YELLOW}⚠ No cache proxy configured (downloads go direct).${NC}"
@@ -53,7 +54,7 @@ echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
 show_vllm_model_menu
 echo ""
-read -p "Select [1-9]: " CHOICE
+read -p "Select [1-${MENU_MAX}]: " CHOICE
 
 if ! select_vllm_model "$CHOICE"; then
     if [ -z "$VLLM_MODEL_ID" ]; then
@@ -124,6 +125,13 @@ echo ""
 read -p "Start the stack now? (Y/n): " START
 if [[ "$START" != "n" && "$START" != "N" ]]; then
     echo -e "${BLUE}Starting vLLM server...${NC}"
+
+    # Validate .env before launch — catch corruption early
+    if ! validate_env ".env"; then
+        echo -e "${RED}Fix .env issues before launching.${NC}"
+        exit 1
+    fi
+
     COMPOSE_EXIT=0
     docker compose up -d || COMPOSE_EXIT=$?
     echo ""

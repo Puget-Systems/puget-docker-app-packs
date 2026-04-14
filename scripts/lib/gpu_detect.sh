@@ -29,7 +29,6 @@ detect_gpus() {
     else
         IS_UNIFIED_MEMORY=false
     fi
-
     VRAM_GB=$((VRAM_MB / 1024))
     TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
 

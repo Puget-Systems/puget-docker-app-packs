@@ -1,43 +1,116 @@
 #!/bin/bash
-echo "Initializing Office Inference..."
+set -euo pipefail
+
+# Puget Systems — Personal LLM Initialization
+# Detects GPUs, recommends a model, pulls via Ollama, launches the stack.
+
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo -e "${BLUE}============================================================${NC}"
+echo -e "${BLUE}   Puget Systems — Personal LLM Setup (Ollama)${NC}"
+echo -e "${BLUE}============================================================${NC}"
+
+# --- Source shared libraries ---
+INIT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+if [ -f "$INIT_DIR/scripts/lib/gpu_detect.sh" ]; then
+    source "$INIT_DIR/scripts/lib/gpu_detect.sh"
+    source "$INIT_DIR/scripts/lib/ollama_model_select.sh"
+else
+    # Fallback: try repo root (when run from pack dir during dev)
+    _REPO_ROOT="$(cd "$INIT_DIR/../.." 2>/dev/null && pwd)" || _REPO_ROOT=""
+    if [ -f "$_REPO_ROOT/scripts/lib/gpu_detect.sh" ]; then
+        source "$_REPO_ROOT/scripts/lib/gpu_detect.sh"
+        source "$_REPO_ROOT/scripts/lib/ollama_model_select.sh"
+    else
+        echo -e "${RED}✗ Cannot find shared libraries (gpu_detect.sh).${NC}"
+        echo "  Run the installer first, or ensure scripts/lib/ exists."
+        exit 1
+    fi
+fi
+
+# --- GPU Detection ---
+echo ""
+echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
+
+if detect_gpus; then
+    echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+    if [ "$IS_BLACKWELL" = true ]; then
+        echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP})${NC}"
+    fi
+else
+    GPU_COUNT=1
+    TOTAL_VRAM=0
+    VRAM_GB=0
+    echo -e "${YELLOW}⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
+    echo "  All models will be shown without VRAM gating."
+fi
 
 # --- Cache Proxy Status ---
 if [ -f .env ]; then
-    source .env 2>/dev/null
+    source .env 2>/dev/null || true
 fi
 
-if [ -n "$CACHE_PROXY" ]; then
-    echo -e "\033[0;32m✓ Cache Proxy: $CACHE_PROXY\033[0m"
+if [ -n "${CACHE_PROXY:-}" ]; then
+    echo -e "${GREEN}✓ Cache Proxy: $CACHE_PROXY${NC}"
 else
-    echo -e "\033[1;33m⚠ No cache proxy configured (downloads go direct).\033[0m"
+    echo -e "${YELLOW}⚠ No cache proxy configured (downloads go direct).${NC}"
     echo "  To enable, add CACHE_PROXY=http://<ip>:3128 to .env"
 fi
+
+# --- Model Selection ---
 echo ""
-
-echo "Select a model to download:"
-echo "  1) Qwen 3 (8B)         - Fast, Low VRAM (~5 GB)"
-echo "  2) Qwen 3 (32B)        - Best Quality, Single GPU (~20 GB) [Recommended]"
-echo "  3) DeepSeek R1 (70B)   - Flagship Reasoning, Dual GPU (~42 GB)"
-echo "  4) Llama 4 Scout       - Multimodal (text+image), Dual GPU (~63 GB)"
-echo "  5) Nemotron 3 Nano     - Long Context + Agentic (~20 GB)"
-echo "  6) Exit"
+echo -e "${YELLOW}[2/3] Select a model${NC}"
 echo ""
-read -p "Select [1-6]: " CHOICE
+echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
+echo ""
+show_ollama_model_menu
+echo ""
+read -p "Select [1-${MENU_MAX}]: " CHOICE
 
-TAG=""
-case $CHOICE in
-    1) TAG="qwen3:8b" ;;
-    2) TAG="qwen3:32b" ;;
-    3) TAG="deepseek-r1:70b" ;;
-    4) TAG="llama4:scout" ;;
-    5) TAG="nemotron-3-nano" ;;
-    *) echo "Exiting."; exit 0 ;;
-esac
+SELECT_RC=0
+select_ollama_model "$CHOICE" || SELECT_RC=$?
 
-echo "Pulling $TAG... (this may take a while for larger models)"
-docker compose exec -it inference ollama pull "$TAG"
+if [ $SELECT_RC -eq 2 ]; then
+    echo "Exiting."
+    exit 0
+elif [ $SELECT_RC -eq 1 ]; then
+    # VRAM insufficient — message already printed by select_ollama_model
+    exit 1
+fi
+
+# --- Pull Model ---
+echo ""
+echo -e "${YELLOW}[3/3] Downloading ${OLLAMA_MODEL_TAG}...${NC}"
+
+# Wait for Ollama server to be ready (may take 60s+ on cold start)
+echo -n "Waiting for Ollama server to be ready"
+OLLAMA_READY=false
+for i in $(seq 1 120); do
+    if docker compose exec -T inference ollama list &>/dev/null; then
+        OLLAMA_READY=true
+        echo ""
+        echo -e "${GREEN}✓ Ollama server is ready.${NC}"
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+
+if [ "$OLLAMA_READY" = false ]; then
+    echo ""
+    echo -e "${RED}✗ Ollama server did not become ready after 120 seconds.${NC}"
+    echo "  Check: docker compose logs inference"
+    exit 1
+fi
+
+echo -e "${BLUE}Pulling ${OLLAMA_MODEL_TAG}... (This may take a while for larger models)${NC}"
+docker compose exec -T inference ollama pull "$OLLAMA_MODEL_TAG"
 
 echo ""
-echo "Model ready!"
-echo "Access the Chat UI at: http://localhost:3000"
-echo "Select '$TAG' from the dropdown at the top."
+echo -e "${GREEN}✓ Model ready!${NC}"
+echo -e "  Access the Chat UI at: ${BLUE}http://localhost:3000${NC}"
+echo -e "  Select '${OLLAMA_MODEL_TAG}' from the dropdown at the top."

@@ -39,8 +39,15 @@ show_vllm_model_menu() {
         echo -e "  7) Nemotron 3 Super (120B MoE) - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo "  8) Custom                      - Enter a HuggingFace model ID"
-    echo "  9) Skip                        - I'll configure via .env later"
+    if [ "$TOTAL_VRAM" -ge 56 ]; then
+        echo "  8) Gemma 4 (26B MoE BF16)      - Google MoE Instruct, 3.8B active (~52 GB)"
+    else
+        echo -e "  8) Gemma 4 (26B MoE BF16)      - ${RED}Requires ~56 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo "  9) Custom                      - Enter a HuggingFace model ID"
+    echo " 10) Skip                        - I'll configure via .env later"
+    MENU_MAX=10
 }
 
 # select_vllm_model <choice>
@@ -121,6 +128,18 @@ select_vllm_model() {
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         8)
+            if [ "$TOTAL_VRAM" -lt 56 ]; then
+                echo -e "${RED}✗ Gemma 4 26B MoE requires ~56 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="google/gemma-4-26B-A4B-it"; VLLM_MODEL_SIZE_GB=52
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
+            VLLM_REASONING_ARGS="--reasoning-parser gemma4"
+            VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
+            VLLM_MAX_CTX=16384
+            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            ;;
+        9)
             read -p "  Enter HuggingFace model ID: " VLLM_MODEL_ID
             return 2
             ;;
@@ -132,10 +151,9 @@ select_vllm_model() {
     # --- Auto-tune GPU memory utilization based on model size vs available VRAM ---
     local available_vram=$((VRAM_GB * VLLM_GPU_COUNT))
     VLLM_GPU_MEM_UTIL="0.90"
-    # Leave MAX_CONTEXT empty to let vLLM auto-detect the maximum context
-    # length based on available VRAM after model loading. This avoids the
-    # previous conservative caps (8K/16K/24K/32K) that left VRAM unused.
-    VLLM_MAX_CTX=""
+    # If the model case-block didn't set a specific MAX_CONTEXT cap,
+    # leave it empty to let vLLM auto-detect based on available VRAM.
+    VLLM_MAX_CTX="${VLLM_MAX_CTX:-}"
 
     if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
         local weight_pct=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))

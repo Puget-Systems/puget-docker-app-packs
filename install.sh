@@ -17,6 +17,8 @@ source "$INSTALLER_DIR/scripts/lib/gpu_detect.sh"
 source "$INSTALLER_DIR/scripts/lib/smart_build.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_monitor.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_model_select.sh"
+source "$INSTALLER_DIR/scripts/lib/ollama_model_select.sh"
+source "$INSTALLER_DIR/scripts/lib/env_write.sh"
 
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${BLUE}   Puget Systems Docker App Pack - Universal Installer${NC}"
@@ -337,11 +339,9 @@ cp -r "$PACKS_DIR/$FLAVOR/." "$INSTALL_DIR/"
 mkdir -p "$INSTALL_DIR/scripts/lib"
 cp "$INSTALLER_DIR/scripts/lib/"*.sh "$INSTALL_DIR/scripts/lib/"
 
-# Create standard .env if it doesn't exist
-if [ ! -f "$INSTALL_DIR/.env" ]; then
-    echo "Creating default .env..."
-    echo "PUGET_APP_NAME=$INSTALL_DIR" > "$INSTALL_DIR/.env"
-fi
+# Reset .env to a clean state on each install/re-install
+# This prevents duplicate entries from stacking on re-runs
+write_env_header "$INSTALL_DIR" "$INSTALL_DIR/.env"
 
 echo -e "${GREEN}Success! Application installed to '$INSTALL_DIR'.${NC}"
 
@@ -623,17 +623,22 @@ case $FLAVOR in
         ;;
     personal_llm)
         echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
-        echo "Note: You will be prompted to download models after the container launches."
-        echo "      (Or use ./init.sh at any time)"
         echo ""
         # Cache Proxy Configuration (optional)
-        echo -e "${YELLOW}Cache Proxy (Optional):${NC}"
-        echo "  If this system is on a LAN with a Puget cache proxy (Squid),"
-        echo "  model downloads can be cached to avoid re-downloading."
-        read -p "  Enter cache proxy URL (or press Enter to skip): " CACHE_URL
-        if [ -n "$CACHE_URL" ]; then
-            echo "CACHE_PROXY=$CACHE_URL" >> "$INSTALL_DIR/.env"
-            echo -e "${GREEN}✓ Cache proxy configured: $CACHE_URL${NC}"
+        prompt_env_proxy "$INSTALL_DIR/.env" || true
+        echo ""
+        # GPU Detection
+        echo -e "${YELLOW}GPU Configuration:${NC}"
+        if detect_gpus; then
+            echo -e "${GREEN}  ✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
+            if [ "$IS_BLACKWELL" = true ]; then
+                echo -e "${GREEN}    Blackwell GPU detected (compute ${COMPUTE_CAP})${NC}"
+            fi
+        else
+            GPU_COUNT=1
+            TOTAL_VRAM=0
+            VRAM_GB=0
+            echo -e "${YELLOW}  ⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
         fi
         ;;
     team_llm)
@@ -641,14 +646,7 @@ case $FLAVOR in
         echo "Production inference with multi-GPU tensor parallelism."
         echo ""
         # Cache Proxy Configuration (optional)
-        echo -e "${YELLOW}Cache Proxy (Optional):${NC}"
-        echo "  If this system is on a LAN with a Puget cache proxy (Squid),"
-        echo "  model downloads can be cached to avoid re-downloading."
-        read -p "  Enter cache proxy URL (or press Enter to skip): " CACHE_URL
-        if [ -n "$CACHE_URL" ]; then
-            echo "CACHE_PROXY=$CACHE_URL" >> "$INSTALL_DIR/.env"
-            echo -e "${GREEN}✓ Cache proxy configured: $CACHE_URL${NC}"
-        fi
+        prompt_env_proxy "$INSTALL_DIR/.env" || true
         echo ""
         # GPU Detection
         echo -e "${YELLOW}GPU Configuration:${NC}"
@@ -669,29 +667,27 @@ case $FLAVOR in
         echo ""
         show_vllm_model_menu
         echo ""
-        read -p "Select [1-7]: " VLLM_MODEL_SELECT
+        read -p "Select [1-${MENU_MAX}]: " VLLM_MODEL_SELECT
 
         if select_vllm_model "$VLLM_MODEL_SELECT"; then
-            echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
-            echo "VLLM_IMAGE=$VLLM_IMAGE" >> "$INSTALL_DIR/.env"
-            echo "GPU_COUNT=$VLLM_GPU_COUNT" >> "$INSTALL_DIR/.env"
-            if [ -n "$VLLM_MAX_CTX" ]; then
-                echo "MAX_CONTEXT=$VLLM_MAX_CTX" >> "$INSTALL_DIR/.env"
-            fi
-            echo "GPU_MEMORY_UTILIZATION=$VLLM_GPU_MEM_UTIL" >> "$INSTALL_DIR/.env"
-            echo "REASONING_ARGS=$VLLM_REASONING_ARGS" >> "$INSTALL_DIR/.env"
-            echo "TOOL_CALL_ARGS=$VLLM_TOOL_CALL_ARGS" >> "$INSTALL_DIR/.env"
-            echo "EXTRA_VLLM_ARGS=$VLLM_EXTRA_ARGS" >> "$INSTALL_DIR/.env"
-            echo "DTYPE=$VLLM_DTYPE" >> "$INSTALL_DIR/.env"
+            write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
+            write_env_var "VLLM_IMAGE" "$VLLM_IMAGE" "$INSTALL_DIR/.env"
+            write_env_var "GPU_COUNT" "$VLLM_GPU_COUNT" "$INSTALL_DIR/.env"
+            write_env_var "MAX_CONTEXT" "$VLLM_MAX_CTX" "$INSTALL_DIR/.env"
+            write_env_var "GPU_MEMORY_UTILIZATION" "$VLLM_GPU_MEM_UTIL" "$INSTALL_DIR/.env"
+            write_env_var "REASONING_ARGS" "$VLLM_REASONING_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
-            local ctx_display=${VLLM_MAX_CTX:-auto (vLLM will size based on available VRAM)}
+            ctx_display=${VLLM_MAX_CTX:-auto (vLLM will size based on available VRAM)}
             echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${ctx_display} context"
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
             echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
             echo -e "  The model will download on first launch."
         elif [ -n "$VLLM_MODEL_ID" ]; then
             # Custom model (return code 2) — write what we have
-            echo "MODEL_ID=$VLLM_MODEL_ID" >> "$INSTALL_DIR/.env"
+            write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Custom model: $VLLM_MODEL_ID${NC}"
             echo -e "  Edit .env to configure GPU count, context, and memory settings."
         else
@@ -712,6 +708,13 @@ read -p "Would you like to build and start the container now? (Y/n): " START_NOW
 if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     echo -e "${BLUE}Building and starting container in background...${NC}"
     cd "$INSTALL_DIR"
+
+    # Validate .env before launch — catch stacking/corruption early
+    if ! validate_env ".env"; then
+        echo -e "${RED}Fix .env issues before launching.${NC}"
+        cd - > /dev/null
+        exit 1
+    fi
     
     # Check for container name conflicts (since we use static names in some packs)
     # We try to get the container name from docker-compose.yml if possible, or just handle the error
@@ -763,28 +766,51 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 echo -e "  Network: ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
                 echo "Select a starter model to download:"
-                echo "  1) Qwen 3 (8B)         - Fast, Low VRAM (~5 GB)"
-                echo "  2) Qwen 3 (32B)        - Best Quality, Single GPU (~20 GB) [Recommended]"
-                echo "  3) DeepSeek R1 (70B)   - Flagship Reasoning, Dual GPU (~42 GB)"
-                echo "  4) Llama 4 Scout       - Multimodal (text+image), Dual GPU (~63 GB)"
-                echo "  5) Nemotron Nano (30B)  - NVIDIA MoE Reasoning, Single GPU (~24 GB)"
-                echo "  6) Skip                - I'll download models later"
                 echo ""
-                read -p "Select a model [1-6]: " MODEL_SELECT
-                
+                show_ollama_model_menu
+                echo ""
+                read -p "Select a model [1-${MENU_MAX}]: " MODEL_SELECT
+
                 MODEL_TAG=""
-                case $MODEL_SELECT in
-                    1) MODEL_TAG="qwen3:8b" ;;
-                    2) MODEL_TAG="qwen3:32b" ;;
-                    3) MODEL_TAG="deepseek-r1:70b" ;;
-                    4) MODEL_TAG="llama4:scout" ;;
-                    5) MODEL_TAG="nemotron-3-nano:30b" ;;
-                    *) echo "Skipping model download." ;;
-                esac
+                OLLAMA_SELECT_RC=0
+                select_ollama_model "$MODEL_SELECT" || OLLAMA_SELECT_RC=$?
+
+                if [ $OLLAMA_SELECT_RC -eq 0 ]; then
+                    MODEL_TAG="$OLLAMA_MODEL_TAG"
+                elif [ $OLLAMA_SELECT_RC -eq 1 ]; then
+                    # VRAM insufficient — message already printed
+                    MODEL_TAG=""
+                else
+                    echo "Skipping model download."
+                    MODEL_TAG=""
+                fi
+
+                if [[ -n "$MODEL_TAG" ]]; then
+                     # Wait for Ollama server to be ready (may take 60s+ on cold start)
+                     echo -n "Waiting for Ollama server to be ready"
+                     OLLAMA_READY=false
+                     for i in $(seq 1 120); do
+                         if docker compose exec -T inference ollama list &>/dev/null; then
+                             OLLAMA_READY=true
+                             echo ""
+                             echo -e "${GREEN}✓ Ollama server is ready.${NC}"
+                             break
+                         fi
+                         echo -n "."
+                         sleep 1
+                     done
+
+                     if [ "$OLLAMA_READY" = false ]; then
+                         echo ""
+                         echo -e "${RED}✗ Ollama server did not become ready after 120 seconds.${NC}"
+                         echo "  Check: docker compose logs inference"
+                         MODEL_TAG=""
+                     fi
+                fi
 
                 if [[ -n "$MODEL_TAG" ]]; then
                      echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
-                     docker compose exec inference ollama pull "$MODEL_TAG"
+                     docker compose exec -T inference ollama pull "$MODEL_TAG"
                      echo -e "${GREEN}✓ Model ready.${NC}"
                 else
                      echo -e "Run ${BLUE}./init.sh${NC} later to download models."

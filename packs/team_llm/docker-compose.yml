@@ -26,6 +26,10 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >
+        if echo "${MODEL_ID:-}" | grep -qi "gemma-4"; then
+          echo "Gemma 4 detected — upgrading transformers...";
+          pip install -q --upgrade transformers >/dev/null 2>&1;
+        fi &&
         exec python3 -m vllm.entrypoints.openai.api_server
         --model=${MODEL_ID:-Qwen/Qwen3-32B}
         --tensor-parallel-size=${GPU_COUNT:-1}
