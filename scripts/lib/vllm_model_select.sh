@@ -39,10 +39,10 @@ show_vllm_model_menu() {
         echo -e "  7) Nemotron 3 Super (120B MoE) - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    if [ "$TOTAL_VRAM" -ge 56 ]; then
-        echo "  8) Gemma 4 (26B MoE BF16)      - Google MoE Instruct, 3.8B active (~52 GB)"
+    if [ "$TOTAL_VRAM" -ge 20 ]; then
+        echo "  8) Gemma 4 (26B MoE AWQ)       - Google MoE Instruct, 3.8B active (~18 GB)"
     else
-        echo -e "  8) Gemma 4 (26B MoE BF16)      - ${RED}Requires ~56 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  8) Gemma 4 (26B MoE AWQ)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
     echo "  9) Custom                      - Enter a HuggingFace model ID"
@@ -129,15 +129,15 @@ select_vllm_model() {
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         8)
-            if [ "$TOTAL_VRAM" -lt 56 ]; then
-                echo -e "${RED}✗ Gemma 4 26B MoE requires ~56 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+            if [ "$TOTAL_VRAM" -lt 20 ]; then
+                echo -e "${RED}✗ Gemma 4 26B MoE AWQ requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="google/gemma-4-26B-A4B-it"; VLLM_MODEL_SIZE_GB=52
+            VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"; VLLM_MODEL_SIZE_GB=18
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
-            VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
-            VLLM_MAX_CTX=16384
+            VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
+            VLLM_DTYPE="float16"
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         9)

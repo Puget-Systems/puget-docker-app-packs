@@ -48,8 +48,11 @@ The `init.sh` wizard offers these pre-configured options:
 | 2 | Qwen 3 (32B FP8) | `Qwen/Qwen3-32B-FP8` | ~32 GB | Near-lossless quality |
 | 3 | Qwen 3.5 (35B MoE AWQ) | `cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit` | ~22 GB | ⚠️ Coming Soon on Blackwell |
 | 4 | Qwen 3.5 (122B MoE AWQ) | `cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit` | ~60 GB | ⚠️ Coming Soon on Blackwell |
-| 5 | DeepSeek R1 (70B AWQ) | `casperhansen/deepseek-r1-distill-llama-70b-awq` | ~38 GB | Reasoning specialist |
-| 6 | Custom | User-specified | Varies | Any HuggingFace model ID |
+| 5 | DeepSeek R1 (70B AWQ) | `Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ` | ~38 GB | Reasoning specialist |
+| 6 | Nemotron 3 Nano (30B MoE) | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4` | ~20 GB | 3B active, long context (NVFP4) |
+| 7 | Nemotron 3 Super (120B MoE) | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | ~60 GB | 12B active, flagship (NVFP4) |
+| 8 | Gemma 4 (26B MoE AWQ) | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~18 GB | 3.8B active, 256K context capable |
+| 9 | Custom | User-specified | Varies | Any HuggingFace model ID |
 
 > **Blackwell Note**: Qwen 3.5 MoE models use Gated DeltaNet (GDN) attention kernels that are not yet supported on RTX 5090 / Blackwell GPUs (`sm_120`). These options appear as "Coming Soon" on Blackwell hardware. Use Qwen 3 32B FP8 instead — it works flawlessly.
 
