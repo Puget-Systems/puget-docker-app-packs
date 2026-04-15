@@ -67,6 +67,7 @@ select_vllm_model() {
     VLLM_EXTRA_ARGS=""
     VLLM_DTYPE="auto"
     VLLM_IMAGE="latest"
+    VLLM_MAX_CTX=""
 
     case $choice in
         1)

@@ -86,24 +86,7 @@ fi
 echo ""
 echo -e "${YELLOW}[3/3] Downloading ${OLLAMA_MODEL_TAG}...${NC}"
 
-# Wait for Ollama server to be ready (may take 60s+ on cold start)
-echo -n "Waiting for Ollama server to be ready"
-OLLAMA_READY=false
-for i in $(seq 1 120); do
-    if docker compose exec -T inference ollama list &>/dev/null; then
-        OLLAMA_READY=true
-        echo ""
-        echo -e "${GREEN}✓ Ollama server is ready.${NC}"
-        break
-    fi
-    echo -n "."
-    sleep 1
-done
-
-if [ "$OLLAMA_READY" = false ]; then
-    echo ""
-    echo -e "${RED}✗ Ollama server did not become ready after 120 seconds.${NC}"
-    echo "  Check: docker compose logs inference"
+if ! wait_for_ollama; then
     exit 1
 fi
 

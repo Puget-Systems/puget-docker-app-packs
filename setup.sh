@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 # Puget Systems App Pack - One-Line Bootstrap Installer
 # This script downloads the latest installer logic and runs it.
