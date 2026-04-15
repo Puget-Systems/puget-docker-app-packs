@@ -97,3 +97,26 @@ select_ollama_model() {
 
     return 0
 }
+
+# wait_for_ollama [timeout_secs]
+#   Polls `docker compose exec -T inference ollama list` until it succeeds.
+#   Returns: 0 = ready, 1 = timed out
+wait_for_ollama() {
+    local timeout="${1:-120}"
+
+    echo -n "Waiting for Ollama server to be ready"
+    for i in $(seq 1 "$timeout"); do
+        if docker compose exec -T inference ollama list &>/dev/null; then
+            echo ""
+            echo -e "${GREEN}✓ Ollama server is ready.${NC}"
+            return 0
+        fi
+        echo -n "."
+        sleep 1
+    done
+
+    echo ""
+    echo -e "${RED}✗ Ollama server did not become ready after ${timeout} seconds.${NC}"
+    echo "  Check: docker compose logs inference"
+    return 1
+}
