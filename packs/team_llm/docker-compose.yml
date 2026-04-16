@@ -28,9 +28,13 @@ services:
       - >
         if echo "${MODEL_ID:-}" | grep -qi "gemma-4"; then
           echo "Gemma 4 detected — upgrading transformers...";
-          pip install -q 'transformers>=4.52,<5' || {
-            echo "ERROR: Failed to upgrade transformers for Gemma 4. Aborting.";
-            exit 1;
+          unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy;
+          pip install --no-cache-dir -q 'transformers>=4.52,<5' || {
+            echo "WARN: PyPI install failed, trying from source...";
+            pip install --no-cache-dir -q 'git+https://github.com/huggingface/transformers.git' || {
+              echo "ERROR: Failed to upgrade transformers for Gemma 4. Aborting.";
+              exit 1;
+            };
           };
         fi &&
         exec python3 -m vllm.entrypoints.openai.api_server
