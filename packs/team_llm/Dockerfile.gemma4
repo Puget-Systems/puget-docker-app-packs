@@ -1,0 +1,23 @@
+# Dockerfile.gemma4
+# Purpose: Bake the correct transformers version for Gemma 4 support
+#          directly into the image so no runtime pip install is needed.
+#
+# Usage:
+#   Build:   docker build -f Dockerfile.gemma4 -t puget-vllm-gemma4:latest .
+#   Compose: Set VLLM_IMAGE=puget-vllm-gemma4:latest in your .env
+#
+# The gemma4 architecture was introduced in transformers >= 5.5.0
+# (released April 2, 2026). The standard vLLM image ships an older
+# version — this Dockerfile upgrades it at build time so the resulting
+# image is fully self-contained and immutable.
+
+ARG VLLM_BASE_IMAGE=vllm/vllm-openai:latest
+FROM ${VLLM_BASE_IMAGE}
+
+# --- Upgrade transformers (build-time, not runtime) ---
+# Pinned to a known-good stable tag. Update intentionally with PR review.
+ARG TRANSFORMERS_VERSION=v5.5.4
+RUN pip install --no-cache-dir \
+    "git+https://github.com/huggingface/transformers.git@${TRANSFORMERS_VERSION}"
+
+# Entrypoint/CMD are inherited from the base vLLM image unchanged.
