@@ -1,7 +1,19 @@
 services:
   # 1. Inference Engine (vLLM)
   inference:
-    image: vllm/vllm-openai:${VLLM_IMAGE:-latest}
+    # Standard upstream image (used for all models except Gemma 4).
+    # For Gemma 4: run `docker compose build inference` once to produce
+    # puget-vllm-gemma4:latest using Dockerfile.gemma4, then set
+    # VLLM_IMAGE=puget-vllm-gemma4:latest in .env.
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.gemma4
+      args:
+        VLLM_BASE_IMAGE: vllm/vllm-openai:latest
+        TRANSFORMERS_VERSION: v5.5.4
+      # Only invoked when you explicitly run `docker compose build inference`.
+      # Normal `docker compose up` skips the build if the image already exists.
     container_name: puget_vllm
     restart: unless-stopped
     deploy:
@@ -26,9 +38,16 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >
-        if echo "${MODEL_ID:-}" | grep -qi "gemma-4"; then
+        if printf "%s\n" "${MODEL_ID:-}" | grep -qi "gemma-4"; then
           echo "Gemma 4 detected — upgrading transformers...";
-          pip install -q 'transformers>=4.52,<5' >/dev/null 2>&1;
+          unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy;
+          pip install --no-cache-dir -q 'transformers>=5.5.0' || {
+            echo "WARN: PyPI install failed, trying from source...";
+            pip install --no-cache-dir -q 'git+https://github.com/huggingface/transformers.git@v5.5.4' || {
+              echo "ERROR: Failed to upgrade transformers for Gemma 4. Aborting.";
+              exit 1;
+            };
+          };
         fi &&
         exec python3 -m vllm.entrypoints.openai.api_server
         --model=${MODEL_ID:-Qwen/Qwen3-32B}
