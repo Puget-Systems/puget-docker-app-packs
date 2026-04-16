@@ -144,7 +144,7 @@ select_vllm_model() {
             VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"; VLLM_MODEL_SIZE_GB=18
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
-            VLLM_EXTRA_ARGS="--limit-mm-per-prompt image=5 --enforce-eager --no-enable-prefix-caching"
+            VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
             VLLM_DTYPE="float16"
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
