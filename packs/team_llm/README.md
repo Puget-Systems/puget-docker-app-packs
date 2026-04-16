@@ -52,7 +52,9 @@ The `init.sh` wizard offers these pre-configured options:
 | 6 | Nemotron 3 Nano (30B MoE) | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4` | ~20 GB | 3B active, long context (NVFP4) |
 | 7 | Nemotron 3 Super (120B MoE) | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | ~60 GB | 12B active, flagship (NVFP4) |
 | 8 | Gemma 4 (26B MoE AWQ) | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~18 GB | 3.8B active, 256K context capable |
-| 9 | Custom | User-specified | Varies | Any HuggingFace model ID |
+| 9 | GPT-OSS (20B MoE MXFP4) | `openai/gpt-oss-20b` | ~16 GB | OpenAI open-weight, Apache 2.0 |
+| 10 | GPT-OSS (120B MoE MXFP4) | `openai/gpt-oss-120b` | ~80 GB | OpenAI flagship open-weight, Apache 2.0 |
+| 11 | Custom | User-specified | Varies | Any HuggingFace model ID |
 
 > **Blackwell Note**: Qwen 3.5 MoE models use Gated DeltaNet (GDN) attention kernels that are not yet supported on RTX 5090 / Blackwell GPUs (`sm_120`). These options appear as "Coming Soon" on Blackwell hardware. Use Qwen 3 32B FP8 instead — it works flawlessly.
 

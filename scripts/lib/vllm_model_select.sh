@@ -45,9 +45,17 @@ show_vllm_model_menu() {
         echo -e "  8) Gemma 4 (26B MoE AWQ)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo "  9) Custom                      - Enter a HuggingFace model ID"
-    echo " 10) Skip                        - I'll configure via .env later"
-    MENU_MAX=10
+    echo "  9) GPT-OSS (20B MoE MXFP4)    - OpenAI open-weight, fast local inference (~16 GB)"
+
+    if [ "$TOTAL_VRAM" -ge 80 ]; then
+        echo " 10) GPT-OSS (120B MoE MXFP4)   - OpenAI flagship open-weight, 80 GB+"
+    else
+        echo -e " 10) GPT-OSS (120B MoE MXFP4)   - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 11) Custom                      - Enter a HuggingFace model ID"
+    echo " 12) Skip                        - I'll configure via .env later"
+    MENU_MAX=12
 }
 
 # select_vllm_model <choice>
@@ -141,6 +149,18 @@ select_vllm_model() {
             VLLM_IMAGE="${NIGHTLY_PREFIX}"
             ;;
         9)
+            VLLM_MODEL_ID="openai/gpt-oss-20b"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser openai"
+            ;;
+        10)
+            if [ "$TOTAL_VRAM" -lt 80 ]; then
+                echo -e "${RED}✗ GPT-OSS 120B requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="openai/gpt-oss-120b"; VLLM_MODEL_SIZE_GB=80
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser openai"
+            ;;
+        11)
             read -p "  Enter HuggingFace model ID: " VLLM_MODEL_ID
             return 2
             ;;
