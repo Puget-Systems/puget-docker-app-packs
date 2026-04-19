@@ -11,7 +11,6 @@ services:
       dockerfile: Dockerfile.gemma4
       args:
         VLLM_BASE_IMAGE: vllm/vllm-openai:latest
-        TRANSFORMERS_VERSION: v5.5.4
       # Only invoked when you explicitly run `docker compose build inference`.
       # Normal `docker compose up` skips the build if the image already exists.
     container_name: puget_vllm
@@ -38,16 +37,8 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >
-        if printf "%s\n" "${MODEL_ID:-}" | grep -qi "gemma-4"; then
-          echo "Gemma 4 detected — upgrading transformers...";
-          unset HTTPS_PROXY HTTP_PROXY https_proxy http_proxy;
-          pip install --no-cache-dir -q 'transformers>=5.5.4,<5.6.0' || {
-            echo "ERROR: Failed to upgrade transformers for Gemma 4. Aborting.";
-            exit 1;
-          };
-        fi &&
         exec python3 -m vllm.entrypoints.openai.api_server
-        --model=${MODEL_ID:-Qwen/Qwen3-32B}
+        --model=${MODEL_ID:-cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit}
         --tensor-parallel-size=${GPU_COUNT:-1}
         ${MAX_CONTEXT:+--max-model-len=${MAX_CONTEXT}}
         --gpu-memory-utilization=${GPU_MEMORY_UTILIZATION:-0.90}
@@ -56,6 +47,7 @@ services:
         --trust-remote-code
         --disable-custom-all-reduce
         ${REASONING_ARGS:-}
+        ${THINKING_ARGS:-}
         ${TOOL_CALL_ARGS:-}
         ${EXTRA_VLLM_ARGS:-}
 
