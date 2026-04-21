@@ -29,7 +29,7 @@ services:
 
   # 2. User Interface
   ui:
-    image: ghcr.io/open-webui/open-webui:v0.8.12
+    image: ghcr.io/open-webui/open-webui:v0.8.10
     container_name: puget_personal_webui
     restart: unless-stopped
     ports:
