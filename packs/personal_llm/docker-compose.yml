@@ -1,19 +1,17 @@
 services:
   # 1. Inference Engine
   inference:
-    image: ollama/ollama:0.21.0
+    image: intelanalytics/ipex-llm-inference-cpp-xpu:latest
     container_name: puget_ollama
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    devices:
+      - /dev/dri:/dev/dri
+    shm_size: "2g"
     ports:
       - "11434:11434"
     environment:
+      - ZES_ENABLE_SYSMAN=1
+      - SYCL_DEVICE_FILTER=level_zero:gpu
       # Optional: Route model downloads through Squid cache proxy
       # Set CACHE_PROXY in .env (e.g. CACHE_PROXY=http://172.19.69.x:3128)
       - HTTPS_PROXY=${CACHE_PROXY:-}

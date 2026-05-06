@@ -5,26 +5,15 @@ services:
     # For Gemma 4: run `docker compose build inference` once to produce
     # puget-vllm-gemma4:latest using Dockerfile.gemma4, then set
     # VLLM_IMAGE=puget-vllm-gemma4:latest in .env.
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.19.1}
-    build:
-      context: .
-      dockerfile: Dockerfile.gemma4
-      args:
-        VLLM_BASE_IMAGE: vllm/vllm-openai:latest
-      # Only invoked when you explicitly run `docker compose build inference`.
-      # Normal `docker compose up` skips the build if the image already exists.
+    image: ${VLLM_IMAGE:-intel/vllm:xpu}
     container_name: puget_vllm
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    devices:
+      - /dev/dri:/dev/dri
     ports:
       - "8000:8000"
     environment:
+      - VLLM_TARGET_DEVICE=xpu
       # Optional: Route model downloads through Squid cache proxy
       - HTTPS_PROXY=${CACHE_PROXY:-}
       - HTTP_PROXY=${CACHE_PROXY:-}
