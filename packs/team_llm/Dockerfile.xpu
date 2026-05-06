@@ -17,19 +17,15 @@ USER root
 # 1. Install prerequisites for adding PPAs
 # 2. Add the kobuk-team PPA (contains the 26.09.x drivers for B70)
 # 3. Install matching userspace drivers
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        software-properties-common \
-        gpg-agent \
-        curl && \
-    add-apt-repository -y ppa:kobuk-team/intel-graphics && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        intel-opencl-icd \
-        libze-intel-gpu1 \
-        intel-level-zero-gpu && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    ENV DEBIAN_FRONTEND=noninteractive
+    RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common gpg-agent curl
+    RUN add-apt-repository -y ppa:kobuk-team/intel-graphics
+    RUN apt-get update
+    RUN apt-get install -y --no-install-recommends \
+            intel-opencl-icd \
+            libze-intel-gpu1 \
+            intel-level-zero-gpu
+    RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for XPU execution
 ENV VLLM_TARGET_DEVICE=xpu
