@@ -66,7 +66,7 @@ select_vllm_model() {
     VLLM_REASONING_ARGS=""
     VLLM_EXTRA_ARGS=""
     VLLM_DTYPE="auto"
-    VLLM_IMAGE="latest"
+    VLLM_IMAGE="vllm/vllm-openai:latest"
     VLLM_MAX_CTX=""
 
     case $choice in
@@ -88,7 +88,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         4)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -100,7 +100,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         5)
             if [ "$TOTAL_VRAM" -lt 40 ]; then
@@ -115,7 +115,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         7)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -126,7 +126,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--enforce-eager --no-enable-prefix-caching"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         8)
             if [ "$TOTAL_VRAM" -lt 20 ]; then
@@ -138,7 +138,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
             VLLM_EXTRA_ARGS="--language-model-only --enforce-eager --no-enable-prefix-caching"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         9)
             read -p "  Enter HuggingFace model ID: " VLLM_MODEL_ID
