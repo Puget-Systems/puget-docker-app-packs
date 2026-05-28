@@ -82,7 +82,7 @@ select_vllm_model() {
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS=""
     VLLM_DTYPE="auto"
-    VLLM_IMAGE="latest"
+    VLLM_IMAGE="vllm/vllm-openai:latest"
     VLLM_MAX_CTX=""
 
     case $choice in
@@ -96,7 +96,7 @@ select_vllm_model() {
             VLLM_THINKING_ARGS="--default-chat-template-kwargs '{\"preserve_thinking\": true}'"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             local total_avail=$((TOTAL_VRAM))
             if [ "$total_avail" -ge 48 ]; then
                 VLLM_MAX_CTX="262144"   # Full native 262K — comfortable on 48GB+
@@ -116,7 +116,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         3)
             VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
@@ -124,7 +124,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         4)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -136,7 +136,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             VLLM_MAX_CTX="131072"
             ;;
         5)
@@ -152,7 +152,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         7)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -163,7 +163,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         8)
             if [ "$TOTAL_VRAM" -lt 20 ]; then
@@ -175,7 +175,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         9)
             VLLM_MODEL_ID="openai/gpt-oss-20b"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16

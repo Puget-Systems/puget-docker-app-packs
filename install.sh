@@ -726,6 +726,7 @@ case $FLAVOR in
             write_env_var "MAX_CONTEXT" "$VLLM_MAX_CTX" "$INSTALL_DIR/.env"
             write_env_var "GPU_MEMORY_UTILIZATION" "$VLLM_GPU_MEM_UTIL" "$INSTALL_DIR/.env"
             write_env_var "REASONING_ARGS" "$VLLM_REASONING_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "THINKING_ARGS" "$VLLM_THINKING_ARGS" "$INSTALL_DIR/.env"
             write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" "$INSTALL_DIR/.env"
             write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
             write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
