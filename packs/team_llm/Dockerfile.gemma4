@@ -7,11 +7,11 @@
 #   Compose: Set VLLM_IMAGE=puget-vllm-gemma4:latest in your .env
 #
 # The gemma4 architecture was introduced in transformers >= 5.5.0
-# (released April 2, 2026). The standard vLLM image ships an older
-# version — this Dockerfile upgrades it at build time so the resulting
-# image is fully self-contained and immutable.
+# (released April 2, 2026). vLLM v0.20.x ships Transformers v5 natively,
+# but this Dockerfile ensures the exact version range is pinned for
+# reproducibility.
 
-ARG VLLM_BASE_IMAGE=vllm/vllm-openai:latest
+ARG VLLM_BASE_IMAGE=vllm/vllm-openai:v0.20.2
 FROM ${VLLM_BASE_IMAGE}
 
 # --- Upgrade transformers (build-time, not runtime) ---

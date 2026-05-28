@@ -82,7 +82,7 @@ select_vllm_model() {
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS=""
     VLLM_DTYPE="auto"
-    VLLM_IMAGE="vllm/vllm-openai:latest"
+    VLLM_IMAGE="vllm/vllm-openai:v0.20.2"
     VLLM_MAX_CTX=""
 
     case $choice in
