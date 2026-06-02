@@ -773,21 +773,24 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     # or conflicting names we know about (like puget_comfy_ui)
     docker compose down 2>/dev/null || true
     
-    # Specifically check for the comfy_ui conflict the user saw
-    if [ "$FLAVOR" == "comfy_ui" ]; then
-        if docker ps -a --format '{{.Names}}' | grep -q "^puget_comfy_ui$"; then
-            echo -e "${YELLOW}⚠ Conflict: A container named 'puget_comfy_ui' already exists.${NC}"
-            read -p "  Would you like to remove the existing container to continue? (y/N): " REMOVE_CONFLICT
-            if [[ "$REMOVE_CONFLICT" == "y" || "$REMOVE_CONFLICT" == "Y" ]]; then
-                echo -e "${BLUE}Removing existing container 'puget_comfy_ui'...${NC}"
-                docker rm -f puget_comfy_ui 2>/dev/null || true
-            else
-                echo -e "${RED}Error: Cannot launch because of name conflict.${NC}"
-                echo "Please stop/remove the existing container or choose a different installation name."
-                cd - > /dev/null
-                exit 1
+    # Check for ALL known container name conflicts.
+    # docker compose down only removes containers from the CURRENT project.
+    # If the user previously installed to a different directory, those orphan
+    # containers keep running under the old project name and cause
+    # "name already in use" errors on `docker compose up`.
+    declare -A PACK_CONTAINERS=(
+        [comfy_ui]="puget_comfy_ui"
+        [team_llm]="puget_vllm puget_team_webui puget_team_brain"
+        [personal_llm]="puget_ollama puget_personal_webui"
+    )
+    CONFLICT_NAMES="${PACK_CONTAINERS[$FLAVOR]:-}"
+    if [ -n "$CONFLICT_NAMES" ]; then
+        for CNAME in $CONFLICT_NAMES; do
+            if docker ps -a --format '{{.Names}}' | grep -q "^${CNAME}$"; then
+                echo -e "${YELLOW}⚠ Removing existing container '${CNAME}' to avoid name conflict...${NC}"
+                docker rm -f "$CNAME" 2>/dev/null || true
             fi
-        fi
+        done
     fi
 
     # Smart rebuild: detect if build files changed → --no-cache rebuild
