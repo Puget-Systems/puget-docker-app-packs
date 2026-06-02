@@ -11,12 +11,16 @@
 #   select_ollama_model <choice>    # sets OLLAMA_* output vars, returns 0/1/2
 
 show_ollama_model_menu() {
-    echo "  1) Qwen 3 (8B)           - Fast, Low VRAM (~5 GB)"
-
-    if [ "$TOTAL_VRAM" -ge 20 ]; then
-        echo "  2) Qwen 3 (32B)          - Best Quality, Single GPU (~20 GB) [Recommended]"
+    if [ "$TOTAL_VRAM" -ge 24 ]; then
+        echo "  1) Qwen 3.6 (35B MoE)    - Agentic coding, 256K ctx, thinking preservation (~24 GB) [New]"
     else
-        echo -e "  2) Qwen 3 (32B)          - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  1) Qwen 3.6 (35B MoE)    - ${RED}Requires ~24 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 18 ]; then
+        echo "  2) Qwen 3.6 (27B Dense)  - Multimodal agentic, 262K ctx (~18 GB) [New]"
+    else
+        echo -e "  2) Qwen 3.6 (27B Dense)  - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
     if [ "$TOTAL_VRAM" -ge 42 ]; then
@@ -63,8 +67,8 @@ select_ollama_model() {
     OLLAMA_MODEL_VRAM_GB=0
 
     case $choice in
-        1) OLLAMA_MODEL_TAG="qwen3:8b";          OLLAMA_MODEL_VRAM_GB=5 ;;
-        2) OLLAMA_MODEL_TAG="qwen3:32b";          OLLAMA_MODEL_VRAM_GB=20 ;;
+        1) OLLAMA_MODEL_TAG="qwen3.6:35b";        OLLAMA_MODEL_VRAM_GB=24 ;;
+        2) OLLAMA_MODEL_TAG="qwen3.6:27b";        OLLAMA_MODEL_VRAM_GB=18 ;;
         3) OLLAMA_MODEL_TAG="deepseek-r1:70b";    OLLAMA_MODEL_VRAM_GB=42 ;;
         4) OLLAMA_MODEL_TAG="llama4:scout";        OLLAMA_MODEL_VRAM_GB=63 ;;
         5) OLLAMA_MODEL_TAG="nemotron-3-nano:30b"; OLLAMA_MODEL_VRAM_GB=24 ;;
@@ -105,7 +109,9 @@ wait_for_ollama() {
     local timeout="${1:-120}"
 
     echo -n "Waiting for Ollama server to be ready"
-    for i in $(seq 1 "$timeout"); do
+    local i=0
+    while [ "$i" -lt "$timeout" ]; do
+        i=$((i + 1))
         if docker compose exec -T inference ollama list &>/dev/null; then
             echo ""
             echo -e "${GREEN}✓ Ollama server is ready.${NC}"

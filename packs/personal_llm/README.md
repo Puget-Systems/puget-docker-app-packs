@@ -27,7 +27,7 @@ Local AI assistant for individual use. Easy model management — pull, swap, and
     ```bash
     ./init.sh
     ```
-    Or manually: `docker compose exec inference ollama pull qwen3:32b`
+    Or manually: `docker compose exec inference ollama pull qwen3.6:35b`
 
 3.  Access the Chat UI: [http://localhost:3000](http://localhost:3000)
 
@@ -35,15 +35,14 @@ Local AI assistant for individual use. Easy model management — pull, swap, and
 
 The `init.sh` wizard offers these pre-configured options:
 
-| # | Model | Ollama Tag | VRAM | Notes |
-|---|---|---|---|---|
-| 1 | Qwen 3 (8B) | `qwen3:8b` | ~5 GB | Fast, low VRAM |
-| 2 | Qwen 3 (32B) | `qwen3:32b` | ~20 GB | Best quality, single GPU |
-| 3 | DeepSeek R1 (70B) | `deepseek-r1:70b` | ~42 GB | Flagship reasoning, dual GPU |
-| 4 | Llama 4 Scout | `llama4:scout` | ~63 GB | Multimodal (text+image) |
-| 5 | Nemotron 3 Nano (30B) | `nemotron-3-nano:30b` | ~24 GB | NVIDIA MoE reasoning |
-| 6 | Nemotron 3 Super | `nemotron-3-super` | ~96 GB | NVIDIA flagship MoE |
-| 7 | Gemma 4 (31B) | `gemma4:31b` | ~20 GB | Google dense instruct |
+| # | Model | Ollama Tag | VRAM | Context | Notes |
+|---|---|---|---|---|---|
+| 1 | **Qwen 3.6 (35B MoE)** | `qwen3.6:35b` | ~24 GB | 256K | Agentic coding, thinking preservation 🆕 |
+| 2 | DeepSeek R1 (70B) | `deepseek-r1:70b` | ~42 GB | — | Flagship reasoning, dual GPU |
+| 3 | Llama 4 Scout | `llama4:scout` | ~63 GB | — | Multimodal (text+image) |
+| 4 | Nemotron 3 Nano (30B) | `nemotron-3-nano:30b` | ~24 GB | — | NVIDIA MoE reasoning |
+| 5 | Nemotron 3 Super | `nemotron-3-super` | ~96 GB | — | NVIDIA flagship MoE |
+| 6 | Gemma 4 (31B) | `gemma4:31b` | ~20 GB | — | Google dense instruct |
 
 All models are quantized (GGUF) for efficient single-GPU inference.
 
@@ -58,12 +57,12 @@ Ollama automatically selects the correct CUDA runtime for your GPU.
 
 ## Context Window
 
-The default context window is capped at **32K tokens** via `OLLAMA_NUM_CTX` to prevent models with large native context windows (e.g., Gemma 4's 256K) from exhausting system RAM during KV cache allocation.
+The default context window is capped at **32K tokens** via `OLLAMA_NUM_CTX` to prevent models with large native context windows (e.g., Qwen 3.6's 256K, Gemma 4's 256K) from exhausting system RAM during KV cache allocation.
 
 To override, add to `.env`:
 
 ```bash
-OLLAMA_NUM_CTX=65536
+OLLAMA_NUM_CTX=131072   # 128K — recommended for Qwen 3.6 on 24GB+ GPUs
 ```
 
 ## Changing Models
@@ -71,7 +70,7 @@ OLLAMA_NUM_CTX=65536
 Pull any model from the [Ollama Library](https://ollama.com/library):
 
 ```bash
-docker compose exec inference ollama pull gemma4:31b
+docker compose exec inference ollama pull qwen3.6:35b
 ```
 
 Or run the wizard again:

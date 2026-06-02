@@ -63,6 +63,19 @@ fi
 # Ensure Manager directory is writable by container (UID mismatch)
 chmod -R 777 custom_nodes/ComfyUI-Manager 2>/dev/null || true
 
+# --- ComfyUI-MultiGPU (auto-install on multi-GPU systems) ---
+if [ ! -d "custom_nodes/ComfyUI-MultiGPU" ]; then
+    # Check if we have multiple GPUs
+    _GPU_CT=$(nvidia-smi --query-gpu=count --format=csv,noheader 2>/dev/null | head -1)
+    if [ "${_GPU_CT:-1}" -gt 1 ]; then
+        echo ""
+        echo -e "${BLUE}Multi-GPU detected (${_GPU_CT} GPUs) — installing ComfyUI-MultiGPU...${NC}"
+        git clone https://github.com/pollockjj/ComfyUI-MultiGPU.git custom_nodes/ComfyUI-MultiGPU
+        echo -e "${GREEN}✓ ComfyUI-MultiGPU installed (DisTorch2 — per-component GPU routing).${NC}"
+    fi
+fi
+chmod -R 777 custom_nodes/ComfyUI-MultiGPU 2>/dev/null || true
+
 # Install Puget model merge as a Manager startup script
 # This runs inside ComfyUI after Manager downloads its cache, so our
 # template models (Z-Image, Flux.2, HiDream) appear in the model browser.

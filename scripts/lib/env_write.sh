@@ -106,10 +106,10 @@ validate_env() {
         errors=$((errors + 1))
     fi
 
-    # Validate VLLM_IMAGE is a known tag or fully-qualified image (warning, not error)
+    # Validate VLLM_IMAGE is a known tag (warning, not error)
     local image
     image=$(grep '^VLLM_IMAGE=' "$env_file" 2>/dev/null | tail -1 | cut -d= -f2-)
-    if [ -n "$image" ] && ! echo "$image" | grep -qE '^(vllm/vllm-openai:)?(latest|nightly|cu130-nightly)$|puget-vllm-gemma4:latest'; then
+    if [ -n "$image" ] && ! echo "$image" | grep -qE '^vllm/vllm-openai:(latest|nightly|cu130-nightly|v[0-9]+\.[0-9]+\.[0-9]+)$'; then
         echo -e "${YELLOW}⚠ Non-standard VLLM_IMAGE: '${image}'${NC}"
     fi
 

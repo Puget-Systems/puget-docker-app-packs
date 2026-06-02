@@ -1,0 +1,23 @@
+name: Checksum Check
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  check-checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Verify checksums
+        run: |
+          echo "Verifying checksums against checksums.md5..."
+          if ! md5sum -c checksums.md5; then
+            echo "::error::Checksum validation failed! Please run 'bash scripts/update_checksum.sh' locally and commit the updated checksums.md5"
+            exit 1
+          fi
+          echo "All checksums matched successfully."

@@ -51,12 +51,11 @@ fi
 
 # --- Cache Proxy Status ---
 if [ -f .env ]; then
-    source .env 2>/dev/null || true
+    # Safe key extraction — only read known keys, never execute .env as code
+    CACHE_PROXY=$(grep '^CACHE_PROXY=' .env 2>/dev/null | tail -1 | cut -d= -f2- || true)
 fi
 
-if [ -n "${CACHE_PROXY:-}" ]; then
-    echo -e "${GREEN}✓ Cache Proxy: $CACHE_PROXY${NC}"
-else
+if [ -z "${CACHE_PROXY:-}" ]; then
     echo -e "${YELLOW}⚠ No cache proxy configured (downloads go direct).${NC}"
     echo "  To enable, add CACHE_PROXY=http://<ip>:3128 to .env"
 fi

@@ -1,7 +1,7 @@
 services:
   # 1. Inference Engine
   inference:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.21.0
     container_name: puget_ollama
     restart: unless-stopped
     deploy:
