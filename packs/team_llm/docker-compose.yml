@@ -53,7 +53,7 @@ services:
 
   # 2. User Interface (Open WebUI)
   ui:
-    image: ghcr.io/open-webui/open-webui:v0.8.10
+    image: ghcr.io/open-webui/open-webui:v0.9.6
     container_name: puget_team_webui
     restart: unless-stopped
     ports:
