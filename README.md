@@ -8,8 +8,8 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 **Supported Hardware**:
 *   **Standard**: Any x86_64 system with Docker
-*   **Accelerated**: NVIDIA GPUs with CUDA 12.6+ (Ada / RTX 4090, etc.)
-*   **Blackwell**: RTX 5090 / RTX PRO 6000 (CUDA 13.0, auto-detected)
+*   **Accelerated**: Intel Arc B70 GPUs (Battlemage Xe2, using OneAPI Level Zero driver)
+*   **NVIDIA**: RTX 4090 / RTX 5090 / etc. *(For NVIDIA GPUs, use the main branch)*
 
 ## Available Flavors
 
@@ -21,7 +21,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 ### 2. ComfyUI (Creative)
 *   **Target**: Generative AI & Image/Video Synthesis
-*   **Base**: NVIDIA CUDA 12.6 Runtime (Ubuntu 24.04)
+*   **Base**: Intel PyTorch XPU Runtime (via `intel/vllm:0.14.1-xpu` base)
 *   **Stack**: ComfyUI (Latest), Manager-Ready
 *   **Models**: Pro Image (Flux.2 Dev, Flux.1 Dev, HiDream), Standard Image (Flux.2 Klein, Flux.1 Schnell, SDXL Turbo, SD 3.5 Medium), Pro Video (LTX-Video 2B)
 *   **Persistence**: Auto-maps `./models`, `./output`, `./input`, `./custom_nodes` to host
@@ -34,9 +34,9 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 ### 4. Team LLM
 *   **Target**: Production Multi-User Inference
-*   **Engine**: vLLM (multi-GPU tensor parallelism, OpenAI-compatible API)
+*   **Engine**: vLLM (multi-GPU tensor parallelism with Intel XPU backend, OpenAI-compatible API)
 *   **Interface**: Open WebUI
-*   **Models**: Qwen 3 (8B, 32B FP8), Qwen 3.5 MoE (35B, 122B — Coming Soon on Blackwell), DeepSeek R1 70B AWQ
+*   **Models**: Qwen 3.6 MoE GPTQ (35B), Qwen 3.6 Dense GPTQ (27B), Qwen 3.5 MoE GPTQ (35B, 122B), DeepSeek R1 GPTQ (70B)
 *   **Best For**: Shared workstations, teams needing a single high-throughput endpoint
 
 ---
@@ -84,15 +84,15 @@ curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack
   # Then LOG OUT and back in!
   ```
 
-### NVIDIA Drivers (GPU Stacks)
+### Intel Arc / GPU Drivers (GPU Stacks)
 - **Required for**: ComfyUI, Personal LLM, Team LLM
-- **Ada (RTX 4090)**: `sudo apt install nvidia-driver-550` (driver 550+)
-- **Blackwell (RTX 5090)**: `sudo apt install nvidia-driver-580-open` (open kernel modules required)
-- Verify: `nvidia-smi`
-
-### NVIDIA Container Toolkit (GPU Stacks)
-- The installer will offer to install this automatically
-- Manual: [NVIDIA Container Toolkit Install Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- **Intel Arc B70**: Requires the Battlemage-compatible userspace drivers (26.09.x+) from the `kobuk-team/intel-graphics` PPA:
+  ```bash
+  sudo add-apt-repository ppa:kobuk-team/intel-graphics
+  sudo apt update
+  sudo apt install intel-opencl-icd libze-intel-gpu1 intel-level-zero-gpu
+  ```
+- **NVIDIA Stacks**: Please switch to the `main` branch if using NVIDIA GPUs.
 
 ---
 

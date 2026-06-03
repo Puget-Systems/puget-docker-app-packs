@@ -38,14 +38,11 @@ echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
 
 if detect_gpus; then
     echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
-    if [ "$IS_BLACKWELL" = true ]; then
-        echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP})${NC}"
-    fi
 else
     GPU_COUNT=1
     TOTAL_VRAM=0
     VRAM_GB=0
-    echo -e "${YELLOW}⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
+    echo -e "${YELLOW}⚠ No compatible GPU detected, cannot detect VRAM.${NC}"
     echo "  All models will be shown without VRAM gating."
 fi
 

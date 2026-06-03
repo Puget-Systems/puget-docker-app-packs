@@ -25,14 +25,11 @@ echo ""
 echo -e "${YELLOW}[1/3] Detecting GPUs...${NC}"
 
 if ! detect_gpus; then
-    echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
+    echo -e "${RED}✗ No compatible GPU detected. Intel Arc GPU with /dev/dri render nodes required.${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
-if [ "$IS_BLACKWELL" = true ]; then
-    echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP}) → using CUDA 13.0 images${NC}"
-fi
 
 # --- Cache Proxy Status ---
 if [ -f .env ]; then

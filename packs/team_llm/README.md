@@ -25,7 +25,7 @@ Production-grade local LLM server for teams. Multi-GPU tensor parallelism with v
 
 2.  Or configure manually via `.env`:
     ```bash
-    MODEL_ID=cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit
+    MODEL_ID=cyankiwi/Qwen3.6-35B-A3B-GPTQ-Int4
     GPU_COUNT=1
     MAX_CONTEXT=131072
     ```
@@ -44,16 +44,14 @@ The `init.sh` wizard offers these pre-configured options:
 
 | # | Model | HuggingFace ID | VRAM | Context | Notes |
 |---|---|---|---|---|---|
-| 1 | **Qwen 3.6 (35B MoE AWQ)** | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | ~22 GB | 128K | Agentic, thinking preservation 🆕 |
-| 2 | Qwen 3.5 (35B MoE AWQ) | `cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit` | ~22 GB | 256K | 3B active params, fast |
-| 3 | Qwen 3.5 (122B MoE AWQ) | `cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit` | ~60 GB | 128K | Flagship, 10B active |
-| 4 | DeepSeek R1 (70B AWQ) | `Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ` | ~38 GB | auto | Reasoning specialist |
-| 5 | Nemotron 3 Nano (30B MoE) | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4` | ~20 GB | auto | 3B active, long context (NVFP4) |
-| 6 | Nemotron 3 Super (120B MoE) | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | ~60 GB | auto | 12B active, flagship (NVFP4) |
-| 7 | Gemma 4 (26B MoE AWQ) | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~18 GB | auto | 3.8B active, 256K context capable |
-| 8 | GPT-OSS (20B MoE MXFP4) | `openai/gpt-oss-20b` | ~16 GB | auto | OpenAI open-weight, Apache 2.0 |
-| 9 | GPT-OSS (120B MoE MXFP4) | `openai/gpt-oss-120b` | ~80 GB | auto | OpenAI flagship open-weight, Apache 2.0 |
-| 10 | Custom | User-specified | Varies | — | Any HuggingFace model ID |
+| 1 | **Qwen 3.6 (35B MoE GPTQ)** | `cyankiwi/Qwen3.6-35B-A3B-GPTQ-Int4` | ~22 GB | 128K/65K | Agentic, thinking preservation 🆕 |
+| 2 | Qwen 3.6 (27B Dense GPTQ) | `cyankiwi/Qwen3.6-27B-GPTQ-Int4` | ~18 GB | auto | Multimodal agentic |
+| 3 | Qwen 3.5 (35B MoE GPTQ) | `cyankiwi/Qwen3.5-35B-A3B-GPTQ-Int4` | ~22 GB | 256K | 3B active params, fast |
+| 4 | Qwen 3.5 (122B MoE GPTQ) | `cyankiwi/Qwen3.5-122B-A10B-GPTQ-Int4` | ~60 GB | 65K | Flagship, 10B active |
+| 5 | DeepSeek R1 (70B GPTQ) | `Valdemardi/DeepSeek-R1-Distill-Llama-70B-GPTQ` | ~38 GB | auto | Reasoning specialist |
+| 6 | Gemma 4 (26B MoE GPTQ) | `cyankiwi/gemma-4-26B-A4B-it-GPTQ-Int4` | ~18 GB | auto | 3.8B active, 256K context capable |
+| 7 | Llama 4 (8B FP16) | `meta-llama/Meta-Llama-4-8B-Instruct` | ~16 GB | auto | Standard FP16, Intel optimized |
+| 8 | Custom | User-specified | Varies | — | Any HuggingFace model ID |
 
 ## Thinking Preservation (Qwen 3.6)
 
@@ -73,16 +71,17 @@ Benefits:
 
 | Model | Native Context | vLLM `MAX_CONTEXT` Set To | Why |
 |---|---|---|---|
-| Qwen 3.6 35B AWQ | 262K | `262144` on 48GB+ / `131072` on 24GB / `65536` on <24GB | KV cache distributes across GPUs — more GPUs = more context |
-| Qwen 3.5 35B AWQ | 256K | auto | Let vLLM size from available VRAM |
-| Qwen 3.5 122B AWQ | 256K | `131072` (128K) | Multi-GPU headroom management |
+| Qwen 3.6 35B GPTQ | 262K | `131072` on 48GB+ / `65536` on <48GB | KV cache distributes across GPUs — more GPUs = more context |
+| Qwen 3.5 35B GPTQ | 256K | auto | Let vLLM size from available VRAM |
+| Qwen 3.5 122B GPTQ | 256K | `65536` (64K) | Multi-GPU headroom management |
 
 ## GPU & Architecture Support
 
-| GPU Family | Architecture | CUDA | Docker Image | Status |
+| GPU Family | Architecture | API/Driver | Docker Image | Status |
 |---|---|---|---|---|
-| RTX 4090 / A6000 | Ada (sm_89) | 12.6 | `vllm/vllm-openai:latest` | ✅ Full support |
-| RTX 5090 / PRO 6000 | Blackwell (sm_120) | 13.0 | `vllm/vllm-openai:cu130-nightly` | ✅ Full support |
+| Intel Arc B70 | Battlemage (xe2) | OneAPI Level Zero | `puget-vllm-xpu:b70` | ✅ Full support |
+| RTX 4090 / A6000 | Ada (sm_89) | CUDA 12.6 | `vllm/vllm-openai:latest` | ✅ Full support |
+| RTX 5090 / PRO 6000 | Blackwell (sm_120) | CUDA 13.0 | `vllm/vllm-openai:cu130-nightly` | ✅ Full support |
 
 The wizard automatically detects your GPU architecture and selects the correct Docker image.
 
@@ -112,12 +111,12 @@ docker compose down && docker compose up -d
   repositories to include custom Python code that runs during model loading. Only use models from
   trusted sources (official HuggingFace repos, verified publishers).
 
-- **Gemma 4 Custom Build**: Gemma 4 requires a newer version of `transformers` than the stock vLLM
-  image ships. You **must** build the custom image before first use:
+- **Gemma 4 Custom Build**: Gemma 4 requires a newer version of `transformers` than the stock NVIDIA vLLM
+  image ships. For NVIDIA systems, you **must** build the custom image before first use:
   ```bash
   docker compose build inference
   ```
-  This bakes the correct `transformers` version into the image at build time using `Dockerfile.gemma4`.
+  This bakes the correct `transformers` version into the image at build time using `Dockerfile.gemma4`. On Intel Arc XPU, the `puget-vllm-xpu:b70` base image includes a compatible version out of the box, so no custom build is needed.
 
 ## Advanced: The "Brain" (AutoGen)
 

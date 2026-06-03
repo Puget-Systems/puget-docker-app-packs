@@ -63,13 +63,23 @@ fi
 # Ensure Manager directory is writable by container (UID mismatch)
 chmod -R 777 custom_nodes/ComfyUI-Manager 2>/dev/null || true
 
+# --- Source shared GPU detection ---
+if [ -f "$_SCRIPT_DIR/scripts/lib/gpu_detect.sh" ]; then
+    source "$_SCRIPT_DIR/scripts/lib/gpu_detect.sh"
+elif [ -f "$_REPO_ROOT/scripts/lib/gpu_detect.sh" ]; then
+    source "$_REPO_ROOT/scripts/lib/gpu_detect.sh"
+fi
+
+if type detect_gpus &>/dev/null; then
+    detect_gpus || true
+fi
+
 # --- ComfyUI-MultiGPU (auto-install on multi-GPU systems) ---
 if [ ! -d "custom_nodes/ComfyUI-MultiGPU" ]; then
     # Check if we have multiple GPUs
-    _GPU_CT=$(nvidia-smi --query-gpu=count --format=csv,noheader 2>/dev/null | head -1)
-    if [ "${_GPU_CT:-1}" -gt 1 ]; then
+    if [ "${GPU_COUNT:-1}" -gt 1 ]; then
         echo ""
-        echo -e "${BLUE}Multi-GPU detected (${_GPU_CT} GPUs) — installing ComfyUI-MultiGPU...${NC}"
+        echo -e "${BLUE}Multi-GPU detected (${GPU_COUNT} GPUs) — installing ComfyUI-MultiGPU...${NC}"
         git clone https://github.com/pollockjj/ComfyUI-MultiGPU.git custom_nodes/ComfyUI-MultiGPU
         echo -e "${GREEN}✓ ComfyUI-MultiGPU installed (DisTorch2 — per-component GPU routing).${NC}"
     fi
@@ -101,33 +111,23 @@ fi
 # Use shared detect_gpus if available, otherwise inline fallback
 if type detect_gpus &>/dev/null; then
     if ! detect_gpus; then
-        echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
+        echo -e "${RED}✗ No compatible GPU detected. Intel Arc GPU with /dev/dri render nodes required.${NC}"
         exit 1
     fi
 else
     # Inline fallback for standalone installs (init.sh copied without repo)
-    if ! command -v nvidia-smi &> /dev/null; then
-        echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
-        exit 1
-    fi
-    GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-    GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-    VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
-    VRAM_GB=$((VRAM_MB / 1024))
-    TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
-    COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
-    COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
-    if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
-        IS_BLACKWELL=true
+    if ls /dev/dri/renderD* &>/dev/null; then
+        GPU_COUNT=$(ls -1q /dev/dri/renderD* | wc -l | tr -d ' ')
+        GPU_NAME="Intel ARC GPU"
+        VRAM_GB=32
+        TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
     else
-        IS_BLACKWELL=false
+        echo -e "${RED}✗ No compatible GPU detected. Intel Arc GPU with /dev/dri render nodes required.${NC}"
+        exit 1
     fi
 fi
 
 echo -e "${GREEN}✓ Found ${GPU_COUNT}x ${GPU_NAME} (${VRAM_GB} GB each, ${TOTAL_VRAM} GB total)${NC}"
-if [ "$IS_BLACKWELL" = true ]; then
-    echo -e "${GREEN}  Blackwell GPU detected (compute ${COMPUTE_CAP})${NC}"
-fi
 
 # --- Model Selection ---
 echo ""
