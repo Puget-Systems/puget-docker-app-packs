@@ -10,10 +10,15 @@ services:
     restart: unless-stopped
     devices:
       - /dev/dri:/dev/dri
+    shm_size: "2g"
     ports:
       - "8000:8000"
     environment:
       - VLLM_TARGET_DEVICE=xpu
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      - CCL_TOPO_P2P_ACCESS=0
+      - ZES_ENABLE_SYSMAN=0
+      - NEO_ReadDeviceBinaryBuiltins=0
       # Optional: Route model downloads through Squid cache proxy
       - HTTPS_PROXY=${CACHE_PROXY:-}
       - HTTP_PROXY=${CACHE_PROXY:-}

@@ -27,9 +27,23 @@ USER root
             intel-level-zero-gpu
     RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Fix the environment by removing conflicting OneAPI ICD and libraries
+# (Same "split-brain" mitigation as our vLLM XPU image)
+RUN rm -f /etc/OpenCL/vendors/intel64.icd && \
+    find /opt/intel -name 'libintelocl.so' -delete
+
+# Remove automatic setvars.sh from .bashrc
+RUN sed -i '/setvars.sh/d' /root/.bashrc && \
+    sed -i '/vars.sh/d' /root/.bashrc
+
 # Set environment variables for XPU execution
 ENV VLLM_TARGET_DEVICE=xpu
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/lib:$LD_LIBRARY_PATH
+ENV OCL_ICD_FILENAMES=
 ENV ONEAPI_DEVICE_SELECTOR=level_zero:gpu
-ENV SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMAND_LISTS=1
+ENV SYCL_DEVICE_FILTER=level_zero:gpu
+ENV SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMAND_LISTS=0
+ENV ZES_ENABLE_SYSMAN=0
+ENV NEO_ReadDeviceBinaryBuiltins=0
 
 # Entrypoint/CMD inherited from base image

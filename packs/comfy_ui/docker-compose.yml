@@ -2,21 +2,13 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
-      args:
-        - CUDA_VERSION=${CUDA_VERSION:-12.8.0}
-        - TORCH_INDEX_URL=${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
+      dockerfile: Dockerfile.xpu
     container_name: puget_comfy_ui
     restart: unless-stopped
     
-    # Enable NVIDIA GPU
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # Enable Intel GPU
+    devices:
+      - /dev/dri:/dev/dri
 
     # Shared memory for PyTorch (large model loading)
     ipc: host
@@ -52,3 +44,8 @@ services:
 
     environment:
       - CLI_ARGS=--listen 0.0.0.0 --preview-method auto
+      - ONEAPI_DEVICE_SELECTOR=level_zero:gpu
+      - SYCL_DEVICE_FILTER=level_zero:gpu
+      - SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMAND_LISTS=0
+      - ZES_ENABLE_SYSMAN=0
+      - NEO_ReadDeviceBinaryBuiltins=0
