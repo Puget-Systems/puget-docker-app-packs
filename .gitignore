@@ -15,3 +15,14 @@ tmp/
 # Build state (per-installation, not tracked)
 .build_fingerprint
 context_portal/
+
+# Zip packages
+*.zip
+
+# Article edits & scratch files
+b70_cleaned.md
+b70_corrected_article.md
+clean_script.py
+images/
+scripts/search_pages.py
+packs/team_llm/benchmark.py
