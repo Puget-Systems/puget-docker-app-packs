@@ -57,7 +57,11 @@ show_vllm_model_menu() {
         echo -e " 11) Qwen 3.6 (27B Dense FP16)  - ${RED}Requires ~56 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    MENU_MAX=11
+    echo " 12) Qwen 2.5 (3B FP16) TP=1     - Single GPU baseline (~6 GB)"
+    echo " 13) Llama 3.1 (8B FP16) TP=1    - Single GPU baseline (~16 GB)"
+    echo " 14) DeepSeek R1 8B (FP16) TP=1  - Single GPU baseline (~16 GB)"
+
+    MENU_MAX=14
 }
 
 # select_vllm_model <choice>
@@ -185,6 +189,31 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            VLLM_MAX_CTX="32768"
+            ;;
+        12)
+            # Benchmark-only: Qwen2.5-3B FP16 forced to single GPU (TP=1)
+            VLLM_MODEL_ID="Qwen/Qwen2.5-3B-Instruct"; VLLM_MODEL_SIZE_GB=6
+            VLLM_GPU_COUNT=1
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            VLLM_MAX_CTX="32768"
+            ;;
+        13)
+            # Benchmark-only: Llama 3.1 8B FP16 forced to single GPU (TP=1)
+            VLLM_MODEL_ID="meta-llama/Llama-3.1-8B-Instruct"; VLLM_MODEL_SIZE_GB=16
+            VLLM_GPU_COUNT=1
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser llama3"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            VLLM_MAX_CTX="32768"
+            ;;
+        14)
+            # Benchmark-only: DeepSeek R1 8B FP16 forced to single GPU (TP=1)
+            VLLM_MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"; VLLM_MODEL_SIZE_GB=16
+            VLLM_GPU_COUNT=1
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
             VLLM_MAX_CTX="32768"
             ;;
         *)
