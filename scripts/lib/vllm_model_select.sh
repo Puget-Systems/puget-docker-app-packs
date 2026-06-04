@@ -195,8 +195,6 @@ select_vllm_model() {
             # Benchmark-only: Qwen2.5-3B FP16 forced to single GPU (TP=1)
             VLLM_MODEL_ID="Qwen/Qwen2.5-3B-Instruct"; VLLM_MODEL_SIZE_GB=6
             VLLM_GPU_COUNT=1
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             VLLM_MAX_CTX="32768"
             ;;
