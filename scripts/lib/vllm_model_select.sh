@@ -225,9 +225,9 @@ select_vllm_model() {
     if [ "${GPU_VENDOR:-nvidia}" = "amd" ]; then
         # AMD ROCm requires more VRAM headroom (RCCL, driver memory translation/GTT/ring buffers)
         if [ "$VLLM_GPU_COUNT" -gt 1 ]; then
-            VLLM_GPU_MEM_UTIL="0.82"
+            VLLM_GPU_MEM_UTIL="0.75" # Default to 0.75 for multi-GPU to give 25% headroom
         else
-            VLLM_GPU_MEM_UTIL="0.85"
+            VLLM_GPU_MEM_UTIL="0.80" # Default to 0.80 for single-GPU to give 20% headroom
         fi
 
         if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
@@ -235,7 +235,9 @@ select_vllm_model() {
             if [ "$weight_pct" -ge 85 ]; then
                 VLLM_GPU_MEM_UTIL="0.88" # Keep 12% headroom for weights
             elif [ "$weight_pct" -ge 70 ]; then
-                VLLM_GPU_MEM_UTIL="0.85" # Keep 15% headroom for weights
+                VLLM_GPU_MEM_UTIL="0.82" # Keep 18% headroom
+            elif [ "$weight_pct" -ge 50 ]; then
+                VLLM_GPU_MEM_UTIL="0.78" # Keep 22% headroom
             fi
         fi
     else
