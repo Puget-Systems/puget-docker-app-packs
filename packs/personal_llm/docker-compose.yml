@@ -1,16 +1,10 @@
 services:
   # 1. Inference Engine
   inference:
-    image: ollama/ollama:0.21.0
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.21.0}
     container_name: puget_ollama
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+
     ports:
       - "11434:11434"
     environment:

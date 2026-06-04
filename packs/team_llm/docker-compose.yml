@@ -5,7 +5,7 @@ services:
     # For Gemma 4: run `docker compose build inference` once to produce
     # puget-vllm-gemma4:latest using Dockerfile.gemma4, then set
     # VLLM_IMAGE=puget-vllm-gemma4:latest in .env.
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.20.2}
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     build:
       context: .
       dockerfile: Dockerfile.gemma4
@@ -15,13 +15,7 @@ services:
       # Normal `docker compose up` skips the build if the image already exists.
     container_name: puget_vllm
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+
     ports:
       - "8000:8000"
     environment:

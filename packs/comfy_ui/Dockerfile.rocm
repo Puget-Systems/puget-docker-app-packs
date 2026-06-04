@@ -1,0 +1,53 @@
+# Base Image: AMD ROCm PyTorch
+# ROCm 6.2.4 provides GPU compute support for AMD Radeon AI PRO / RDNA 4
+# HSA_OVERRIDE_GFX_VERSION is set at container runtime, not baked in,
+# so this Dockerfile stays hardware-agnostic across AMD GPU generations.
+FROM rocm/pytorch:rocm6.2.4-py3.11-ubuntu22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies (mirrors CUDA Dockerfile)
+# - git, wget: For cloning managers/models
+# - libgl1, libglib2.0-0: OpenCV requirements
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create standard user
+RUN groupadd -r -g 1500 puget-app-pack && useradd -r -g puget-app-pack -m -d /home/puget-app-pack -s /bin/bash puget-app-pack
+
+# Set up Workspace
+WORKDIR /home/puget-app-pack/app
+
+# Clone ComfyUI (Release branch/standard)
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git .
+
+# Install ComfyUI Python requirements
+# Note: PyTorch with ROCm support is pre-installed in the base image.
+# We only install ComfyUI's own requirements on top.
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install 3D node dependencies (fixes nodes_load_3d.py import errors)
+RUN pip install --no-cache-dir trimesh pygltflib numpy-stl
+
+# Install ComfyUI Manager dependencies (volume-mounted from host)
+RUN pip install --no-cache-dir GitPython PyGithub matrix-nio huggingface-hub typer rich toml uv chardet
+
+# Ensure standard data directories exist for volume mounting
+# Using -p for idempotent creation (some may exist from git clone)
+RUN mkdir -p models output input temp custom_nodes
+
+# Fix permissions
+RUN chown -R puget-app-pack:puget-app-pack /home/puget-app-pack
+
+USER puget-app-pack
+
+# Expose standard port
+EXPOSE 8188
+
+# Launch
+CMD ["python3", "main.py", "--listen", "0.0.0.0"]
