@@ -221,15 +221,33 @@ select_vllm_model() {
 
     # --- Auto-tune GPU memory utilization based on model size vs available VRAM ---
     local available_vram=$((VRAM_GB * VLLM_GPU_COUNT))
-    VLLM_GPU_MEM_UTIL="0.90"
 
-    if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
-        local weight_pct=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))
+    if [ "${GPU_VENDOR:-nvidia}" = "amd" ]; then
+        # AMD ROCm requires more VRAM headroom (RCCL, driver memory translation/GTT/ring buffers)
+        if [ "$VLLM_GPU_COUNT" -gt 1 ]; then
+            VLLM_GPU_MEM_UTIL="0.82"
+        else
+            VLLM_GPU_MEM_UTIL="0.85"
+        fi
 
-        if [ "$weight_pct" -ge 85 ]; then
-            VLLM_GPU_MEM_UTIL="0.95"
-        elif [ "$weight_pct" -ge 70 ]; then
-            VLLM_GPU_MEM_UTIL="0.92"
+        if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+            local weight_pct=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))
+            if [ "$weight_pct" -ge 85 ]; then
+                VLLM_GPU_MEM_UTIL="0.88" # Keep 12% headroom for weights
+            elif [ "$weight_pct" -ge 70 ]; then
+                VLLM_GPU_MEM_UTIL="0.85" # Keep 15% headroom for weights
+            fi
+        fi
+    else
+        # NVIDIA / Intel defaults
+        VLLM_GPU_MEM_UTIL="0.90"
+        if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+            local weight_pct=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))
+            if [ "$weight_pct" -ge 85 ]; then
+                VLLM_GPU_MEM_UTIL="0.95"
+            elif [ "$weight_pct" -ge 70 ]; then
+                VLLM_GPU_MEM_UTIL="0.92"
+            fi
         fi
     fi
 
