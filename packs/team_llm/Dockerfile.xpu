@@ -21,10 +21,13 @@ USER root
     RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common gpg-agent curl
     RUN add-apt-repository -y ppa:kobuk-team/intel-graphics
     RUN apt-get update
+    # NOTE: the kobuk PPA's libze-intel-gpu1 is the modern Level Zero GPU driver and
+    # it Breaks/replaces the legacy intel-level-zero-gpu package (whose libigc1/
+    # libigdfcl1 deps are not installable here). Installing both fails with
+    # "held broken packages", so we install libze-intel-gpu1 only.
     RUN apt-get install -y --no-install-recommends \
             intel-opencl-icd \
-            libze-intel-gpu1 \
-            intel-level-zero-gpu
+            libze-intel-gpu1
     RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Fix the environment by removing conflicting OneAPI ICD and libraries
