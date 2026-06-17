@@ -9,45 +9,33 @@
 # Usage:
 #   show_vllm_model_menu          # prints the numbered model list
 #   select_vllm_model <choice>    # sets VLLM_* output vars, returns 0/1/2
+#
+# Models: unquantized FP16 only. The Intel XPU backend cannot run AWQ/GPTQ
+# (CUDA-only dequant kernels) or bfloat16, so every entry here is an FP16 model
+# that has been validated end-to-end on Intel Arc Pro B70 hardware. VRAM-gated
+# so larger models only appear when enough aggregate GPU memory is present.
 
 show_vllm_model_menu() {
-    echo "  1) Qwen 3.6 (35B MoE GPTQ)    - Agentic reasoning, 128K ctx (~22 GB) [New]"
+    echo "  1) Qwen2.5 3B Instruct        - Fast general chat, FP16 (~6 GB)"
+    echo "  2) Qwen3 8B                   - Thinking/reasoning model, FP16 (~16 GB) [Recommended]"
+    echo "  3) Llama 3.1 8B Instruct      - General purpose, FP16 (~16 GB)"
+    echo "  4) DeepSeek R1 Distill 8B     - Reasoning specialist, FP16 (~16 GB)"
 
-    if [ "$TOTAL_VRAM" -ge 18 ]; then
-        echo "  2) Qwen 3.6 (27B Dense GPTQ)  - Multimodal agentic, 262K ctx (~18 GB) [New]"
+    if [ "$TOTAL_VRAM" -ge 60 ]; then
+        echo "  5) Qwen3.6 27B Dense          - Capable dense model, FP16 (~54 GB, multi-GPU)"
     else
-        echo -e "  2) Qwen 3.6 (27B Dense GPTQ)  - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
-    fi
-
-    if [ "$TOTAL_VRAM" -ge 22 ]; then
-        echo "  3) Qwen 3.5 (35B MoE GPTQ)    - 3B active params, 256K ctx (~22 GB)"
-    else
-        echo -e "  3) Qwen 3.5 (35B MoE GPTQ)    - ${RED}Requires ~22 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  5) Qwen3.6 27B Dense          - ${RED}Requires ~60 GB total VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
     if [ "$TOTAL_VRAM" -ge 80 ]; then
-        echo "  4) Qwen 3.5 (122B MoE GPTQ)   - Flagship, 10B active, 128K ctx (~60 GB) [Recommended]"
+        echo "  6) Qwen3.6 35B-A3B MoE        - 3B active params, FP16 (~70 GB, multi-GPU)"
     else
-        echo -e "  4) Qwen 3.5 (122B MoE GPTQ)   - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  6) Qwen3.6 35B-A3B MoE        - ${RED}Requires ~80 GB total VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    if [ "$TOTAL_VRAM" -ge 40 ]; then
-        echo "  5) DeepSeek R1 (70B GPTQ)     - Reasoning specialist (~38 GB)"
-    else
-        echo -e "  5) DeepSeek R1 (70B GPTQ)     - ${RED}Requires ~40 GB VRAM${NC}"
-    fi
-
-    if [ "$TOTAL_VRAM" -ge 20 ]; then
-        echo "  6) Gemma 4 (26B MoE GPTQ)     - Google MoE Instruct, 3.8B active (~18 GB)"
-    else
-        echo -e "  6) Gemma 4 (26B MoE GPTQ)     - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
-    fi
-
-    echo "  7) Llama 4 (8B FP16)          - Standard FP16, Intel optimized (~16 GB)"
-
-    echo "  8) Custom                     - Enter a HuggingFace model ID"
-    echo "  9) Skip                       - I'll configure via .env later"
-    MENU_MAX=9
+    echo "  7) Custom                     - Enter a HuggingFace model ID"
+    echo "  8) Skip                       - I'll configure via .env later"
+    MENU_MAX=8
 }
 
 # select_vllm_model <choice>
@@ -67,85 +55,57 @@ select_vllm_model() {
     VLLM_TOOL_CALL_ARGS=""
     VLLM_REASONING_ARGS=""
     VLLM_THINKING_ARGS=""
-    VLLM_EXTRA_ARGS=""
-    VLLM_DTYPE="float16"
+    VLLM_EXTRA_ARGS="$XPU_ARGS"
+    VLLM_DTYPE="float16"     # XPU cannot serve bfloat16
     if [ "$GPU_VENDOR" == "intel" ]; then
-        VLLM_IMAGE="puget-vllm-xpu:b70"
+        VLLM_IMAGE="puget-vllm-xpu:b70"   # built from Dockerfile.xpu (LLM Scaler + patch)
     else
         VLLM_IMAGE="vllm/vllm-openai:latest"
     fi
-    VLLM_MAX_CTX=""
+    VLLM_MAX_CTX="32768"
 
     case $choice in
         1)
-            VLLM_MODEL_ID="cyankiwi/Qwen3.6-35B-A3B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=22
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_THINKING_ARGS="--default-chat-template-kwargs '{\"preserve_thinking\": true}'"
-            VLLM_EXTRA_ARGS="$XPU_ARGS"
-            local total_avail=$((TOTAL_VRAM))
-            if [ "$total_avail" -ge 48 ]; then
-                VLLM_MAX_CTX="131072"
-            else
-                VLLM_MAX_CTX="65536"
-            fi
-            ;;
-        2)
-            if [ "$TOTAL_VRAM" -lt 18 ]; then
-                echo -e "${RED}✗ Qwen 3.6 27B Dense GPTQ requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                return 1
-            fi
-            VLLM_MODEL_ID="cyankiwi/Qwen3.6-27B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=18
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="--language-model-only $XPU_ARGS"
-            ;;
-        3)
-            VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=22
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="--language-model-only $XPU_ARGS"
-            ;;
-        4)
-            if [ "$TOTAL_VRAM" -lt 80 ]; then
-                echo -e "${RED}✗ Qwen 3.5 122B MoE GPTQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                return 1
-            fi
-            VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=60
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
-            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="$XPU_ARGS"
-            VLLM_MAX_CTX="65536"
-            ;;
-        5)
-            if [ "$TOTAL_VRAM" -lt 40 ]; then
-                echo -e "${RED}✗ DeepSeek R1 70B GPTQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
-                return 1
-            fi
-            VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-GPTQ"; VLLM_MODEL_SIZE_GB=38
+            VLLM_MODEL_ID="Qwen/Qwen2.5-3B-Instruct"; VLLM_MODEL_SIZE_GB=6
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
             ;;
-        6)
-            if [ "$TOTAL_VRAM" -lt 20 ]; then
-                echo -e "${RED}✗ Gemma 4 26B MoE GPTQ requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+        2)
+            VLLM_MODEL_ID="Qwen/Qwen3-8B"; VLLM_MODEL_SIZE_GB=16
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            ;;
+        3)
+            VLLM_MODEL_ID="unsloth/meta-llama-3.1-8b-instruct"; VLLM_MODEL_SIZE_GB=16
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser llama3_json"
+            ;;
+        4)
+            VLLM_MODEL_ID="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"; VLLM_MODEL_SIZE_GB=16
+            VLLM_REASONING_ARGS="--reasoning-parser deepseek_r1"
+            ;;
+        5)
+            if [ "$TOTAL_VRAM" -lt 60 ]; then
+                echo -e "${RED}✗ Qwen3.6 27B Dense (FP16) requires ~60 GB total VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=18
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
-            VLLM_REASONING_ARGS="--reasoning-parser gemma4"
-            VLLM_EXTRA_ARGS="$XPU_ARGS"
+            VLLM_MODEL_ID="Qwen/Qwen3.6-27B"; VLLM_MODEL_SIZE_GB=54
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            ;;
+        6)
+            if [ "$TOTAL_VRAM" -lt 80 ]; then
+                echo -e "${RED}✗ Qwen3.6 35B-A3B MoE (FP16) requires ~80 GB total VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="Qwen/Qwen3.6-35B-A3B"; VLLM_MODEL_SIZE_GB=70
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             ;;
         7)
-            VLLM_MODEL_ID="meta-llama/Meta-Llama-4-8B-Instruct"; VLLM_MODEL_SIZE_GB=16
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser llama4"
-            VLLM_EXTRA_ARGS="$XPU_ARGS"
-            ;;
-        8)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
                 echo -e "${RED}✗ Invalid model ID format: '${VLLM_MODEL_ID}'${NC}"
-                echo "  Expected format: owner/model-name (e.g. cyankiwi/Qwen3.6-35B-A3B-GPTQ-Int4)"
+                echo "  Expected format: owner/model-name (e.g. Qwen/Qwen3-8B)"
                 VLLM_MODEL_ID=""
                 return 2
             fi
@@ -160,7 +120,7 @@ select_vllm_model() {
     local available_vram=$((VRAM_GB * VLLM_GPU_COUNT))
     VLLM_GPU_MEM_UTIL="0.90"
 
-    if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+    if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null && [ "$available_vram" -gt 0 ] 2>/dev/null; then
         local weight_pct=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))
 
         if [ "$weight_pct" -ge 85 ]; then

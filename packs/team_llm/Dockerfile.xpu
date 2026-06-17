@@ -1,52 +1,37 @@
 # Dockerfile.xpu
-# Purpose: Support Intel Arc B70 hardware by using an Ubuntu 24.04 base
-#          and installing matching drivers from the kobuk-team PPA.
+# Puget Systems — Intel Arc Pro B70 (Battlemage / Xe2) vLLM image.
+#
+# Built on Intel's purpose-built multi-GPU LLM Scaler image, which ships the
+# correct Level Zero / oneCCL stack for the B70 out of the box (no driver PPA
+# rebuild needed) and supports tensor parallelism across multiple cards. This is
+# the exact base our published B70 benchmarks were validated on.
+#
+# The only change we add is a small compatibility patch (see below) so the
+# multimodal Qwen3.6 models (27B dense, 35B-A3B MoE) load on this build.
 #
 # Usage:
 #   Build:   docker build -f Dockerfile.xpu -t puget-vllm-xpu:b70 .
-#   Compose: Set VLLM_IMAGE=puget-vllm-xpu:b70 in your .env
+#   Compose: Set VLLM_IMAGE=puget-vllm-xpu:b70 in your .env (the model-select
+#            menu sets this automatically on Intel hardware).
 
-# We use the newest vLLM XPU image. If it's Noble, great. If it's Jammy, 
-# add-apt-repository will handle the PPA for the detected OS version.
-ARG VLLM_BASE_IMAGE=intel/vllm:0.17.0-xpu
+ARG VLLM_BASE_IMAGE=intel/llm-scaler-vllm:0.14.0-b8.2.1
 FROM ${VLLM_BASE_IMAGE}
 
-# Switch to root to install drivers
 USER root
 
-# 1. Install prerequisites for adding PPAs
-# 2. Add the kobuk-team PPA (contains the 26.09.x drivers for B70)
-# 3. Install matching userspace drivers
-    ENV DEBIAN_FRONTEND=noninteractive
-    RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common gpg-agent curl
-    RUN add-apt-repository -y ppa:kobuk-team/intel-graphics
-    RUN apt-get update
-    # NOTE: the kobuk PPA's libze-intel-gpu1 is the modern Level Zero GPU driver and
-    # it Breaks/replaces the legacy intel-level-zero-gpu package (whose libigc1/
-    # libigdfcl1 deps are not installable here). Installing both fails with
-    # "held broken packages", so we install libze-intel-gpu1 only.
-    RUN apt-get install -y --no-install-recommends \
-            intel-opencl-icd \
-            libze-intel-gpu1
-    RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+# Compatibility patch: Qwen3-VL ships a Qwen2VLImageProcessorFast that does not
+# expose `.max_pixels` / `.min_pixels` as attributes (they live in `.size`), so
+# vLLM's qwen2_vl.py crashes with AttributeError when loading Qwen3.6-27B / 35B.
+# Make the attribute access tolerant (fall back to None, which the existing
+# `or image_processor.size[...]` handling already covers). Only the bare
+# attribute accesses are rewritten; the `size["max_pixels"]` dict lookups are
+# intentionally left untouched.
+RUN for P in $(find / -path '*/vllm/model_executor/models/qwen2_vl.py' 2>/dev/null); do \
+        sed -i -E \
+            -e 's/image_processor\.min_pixels/getattr(image_processor,"min_pixels",None)/g' \
+            -e 's/image_processor\.max_pixels/getattr(image_processor,"max_pixels",None)/g' \
+            "$P"; \
+        echo "patched: $P"; \
+    done
 
-# Fix the environment by removing conflicting OneAPI ICD and libraries
-# (Same "split-brain" mitigation as our vLLM XPU image)
-RUN rm -f /etc/OpenCL/vendors/intel64.icd && \
-    find /opt/intel -name 'libintelocl.so' -delete
-
-# Remove automatic setvars.sh from .bashrc
-RUN sed -i '/setvars.sh/d' /root/.bashrc && \
-    sed -i '/vars.sh/d' /root/.bashrc
-
-# Set environment variables for XPU execution
-ENV VLLM_TARGET_DEVICE=xpu
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/lib:$LD_LIBRARY_PATH
-ENV OCL_ICD_FILENAMES=
-ENV ONEAPI_DEVICE_SELECTOR=level_zero:gpu
-ENV SYCL_DEVICE_FILTER=level_zero:gpu
-ENV SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMAND_LISTS=0
-ENV ZES_ENABLE_SYSMAN=0
-ENV NEO_ReadDeviceBinaryBuiltins=0
-
-# Entrypoint/CMD inherited from base image
+# Entrypoint/CMD inherited from the LLM Scaler base image.
