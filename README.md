@@ -63,6 +63,22 @@ cd puget-docker-app-pack
 ./install.sh
 ```
 
+### Intel Arc (B70 / Battlemage)
+
+For Intel Arc Pro B70 GPUs, use the `intel-b70` branch (multi-GPU vLLM on the Intel XPU backend). The installer auto-detects the Intel GPU, offers to install the Intel Compute Runtime, and builds the XPU image — same flow as the NVIDIA path, just from a different branch.
+
+One-line install (setup route):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/intel-b70/setup.sh -o setup.sh && BRANCH=intel-b70 bash setup.sh
+```
+
+Manual install (clone route):
+
+```bash
+git clone -b intel-b70 https://github.com/Puget-Systems/puget-docker-app-pack.git && cd puget-docker-app-pack && ./install.sh
+```
+
 ### Develop Branch
 
 For the latest features (not yet released):
@@ -93,6 +109,15 @@ curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack
 ### NVIDIA Container Toolkit (GPU Stacks)
 - The installer will offer to install this automatically
 - Manual: [NVIDIA Container Toolkit Install Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+### Intel Arc Drivers (B70 / Battlemage)
+- **Required for**: the Intel Arc install (`intel-b70` branch)
+- The installer **auto-detects** the Intel GPU and offers to install the Intel Compute Runtime (`intel-opencl-icd`, `libze-intel-gpu1`, `clinfo`, …) — no manual step needed in most cases.
+- For the newest Battlemage drivers (26.09.x+), add the `kobuk-team/intel-graphics` PPA *before* running the installer:
+  ```bash
+  sudo add-apt-repository -y ppa:kobuk-team/intel-graphics && sudo apt update
+  ```
+- Verify: `clinfo | grep "Device Name"`
 
 ---
 
