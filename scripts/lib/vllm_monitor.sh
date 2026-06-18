@@ -86,7 +86,11 @@ wait_for_vllm() {
             CANDIDATE_PHASE="Capturing CUDA graphs"
             CANDIDATE_LEVEL=5
             DETAIL="${GRAPH_PCT:-working...}"
-        elif echo "$LAST_LOG" | grep -q "torch.compile\|Dynamo bytecode\|compile range"; then
+        elif echo "$LAST_LOG" | grep -qE "Dynamo bytecode transform|Compiling a graph|Start compiling|torch\.compile takes [0-9]"; then
+            # Match real compile activity only. Plain "torch.compile" also appears in
+            # the engine config dump and in "disabling torch.compile" (enforce-eager),
+            # which previously latched this phase at level 4 and masked the download/
+            # load phases for the rest of startup.
             CANDIDATE_PHASE="Compiling model kernels"
             CANDIDATE_LEVEL=4
             DETAIL="(torch.compile)"

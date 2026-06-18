@@ -8,5 +8,5 @@ d265c0661ff2db80accfc2b787047adb  ./scripts/lib/gpu_detect.sh
 c1a62411ee8e8d35c8125b2b1c43e504  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 7ee84743158864b7f3f883ba2db2e1f4  ./scripts/lib/vllm_model_select.sh
-bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
+99b336429eab58274e75603354c1ba0e  ./scripts/lib/vllm_monitor.sh
 fd2e132d6ac4c87fd89833456a7cd087  ./setup.sh
