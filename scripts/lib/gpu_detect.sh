@@ -5,6 +5,7 @@
 
 detect_gpus() {
     if ! command -v nvidia-smi &> /dev/null; then
+        GPU_VENDOR=""
         GPU_COUNT=0
         GPU_NAME="unknown"
         VRAM_MB=0
@@ -16,6 +17,10 @@ detect_gpus() {
         NIGHTLY_PREFIX="nightly"
         return 1
     fi
+
+    # Detection here is NVIDIA-only (nvidia-smi). Emit the vendor so consumers
+    # (installer, benchmark harness) don't have to infer it.
+    GPU_VENDOR="nvidia"
 
     GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
     GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)

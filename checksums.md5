@@ -4,7 +4,7 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 37977bb55e43a9919f64e2c117635819  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
 1ef7849a97994a2766f21daf107d0e69  ./scripts/lib/env_write.sh
-1c6cd73c42e0774688c9e09acc0e14a7  ./scripts/lib/gpu_detect.sh
+d265c0661ff2db80accfc2b787047adb  ./scripts/lib/gpu_detect.sh
 c1a62411ee8e8d35c8125b2b1c43e504  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 7ee84743158864b7f3f883ba2db2e1f4  ./scripts/lib/vllm_model_select.sh
