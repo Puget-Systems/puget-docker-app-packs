@@ -225,13 +225,11 @@ case $CHOICE in
         MODEL_DIR="models/diffusion_models"
         MODEL_SIZE_GB=33
         TEMPLATE_HINT="Flux.2 Dev"
-        # Text encoder: BF16 (33 GB) needs 48+ GB GPU; FP8 (17 GB) fits on 24-40 GB GPUs
-        if [ "$VRAM_GB" -ge 48 ]; then
-            TEXT_ENC="mistral_3_small_flux2_bf16.safetensors"
-        else
-            TEXT_ENC="mistral_3_small_flux2_fp8.safetensors"
-            echo -e "${YELLOW}  Note: Using FP8 text encoder (fits ${VRAM_GB} GB GPU).${NC}"
-        fi
+        # Text encoder: always fetch the FP8 encoder (17 GB). ComfyUI's stock Flux.2
+        # templates reference this file by name; previously fetching the BF16 encoder on
+        # 48+ GB GPUs left those templates unable to find the encoder (CLIPLoader "value
+        # not in list" -> the job is rejected). FP8 fits everywhere and matches the templates.
+        TEXT_ENC="mistral_3_small_flux2_fp8.safetensors"
         EXTRA_DOWNLOADS=(
             "models/vae|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors"
             "models/text_encoders|https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/text_encoders/${TEXT_ENC}"

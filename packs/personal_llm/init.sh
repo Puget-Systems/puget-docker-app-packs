@@ -81,6 +81,22 @@ elif [ $SELECT_RC -eq 1 ]; then
     exit 1
 fi
 
+# --- Memory-aware context window ---
+# Scale OLLAMA_NUM_CTX to the memory headroom left after the model weights (and enable
+# flash-attention + q8 KV cache) so large models don't OOM-kill the runner. Persist to
+# .env and recreate the server so the settings take effect.
+recommend_ollama_context
+_set_env_var() {  # key value
+    if [ -f .env ]; then grep -v "^$1=" .env > .env.tmp 2>/dev/null && mv .env.tmp .env; fi
+    echo "$1=$2" >> .env
+}
+_set_env_var OLLAMA_NUM_CTX "$OLLAMA_NUM_CTX"
+_set_env_var OLLAMA_FLASH_ATTENTION "$OLLAMA_FLASH_ATTENTION"
+_set_env_var OLLAMA_KV_CACHE_TYPE "$OLLAMA_KV_CACHE_TYPE"
+echo -e "${GREEN}✓ Context window: ${OLLAMA_NUM_CTX} tokens${NC} (memory-aware for ${OLLAMA_MODEL_TAG} in ${TOTAL_VRAM} GB; flash-attn + q8 KV)"
+echo -e "  ${BLUE}Applying context settings (recreating server)...${NC}"
+docker compose up -d >/dev/null 2>&1 || true
+
 # --- Pull Model ---
 echo ""
 echo -e "${YELLOW}[3/3] Downloading ${OLLAMA_MODEL_TAG}...${NC}"

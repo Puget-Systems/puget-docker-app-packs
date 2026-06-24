@@ -57,12 +57,12 @@ Ollama automatically selects the correct CUDA runtime for your GPU.
 
 ## Context Window
 
-The default context window is capped at **32K tokens** via `OLLAMA_NUM_CTX` to prevent models with large native context windows (e.g., Qwen 3.6's 256K, Gemma 4's 256K) from exhausting system RAM during KV cache allocation.
+`init.sh` sets the context window **memory-aware per model**: it scales `OLLAMA_NUM_CTX` to the VRAM headroom left after the model weights (and enables flash-attention + a q8 KV cache, ~half the KV footprint). Small models keep the full 32K; large models that would otherwise exhaust the pool during KV-cache allocation are scaled down automatically — e.g. a 100B+ MoE like Llama 4 Scout is scaled to ~8K on a tight pool, where a flat 32K can OOM-kill the runner.
 
-To override, add to `.env`:
+The chosen value is written to `.env` and printed during setup. To override, set it explicitly in `.env` (this takes precedence):
 
 ```bash
-OLLAMA_NUM_CTX=131072   # 128K — recommended for Qwen 3.6 on 24GB+ GPUs
+OLLAMA_NUM_CTX=131072   # 128K — only if you have the memory headroom for it
 ```
 
 ## Changing Models

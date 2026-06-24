@@ -14,9 +14,12 @@ services:
       - HTTP_PROXY=${CACHE_PROXY:-}
       - NO_PROXY=localhost,127.0.0.1,0.0.0.0
       - no_proxy=localhost,127.0.0.1,0.0.0.0
-      # Default context window cap (prevents 256K models from exhausting system RAM)
-      # Override in .env: OLLAMA_NUM_CTX=65536
+      # Context window + KV cache. init.sh sets these memory-aware per model (scaled to
+      # the VRAM headroom after weights) and writes them to .env; the defaults below apply
+      # if .env is unset. Flash-attention is required for the quantized (q8) KV cache.
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-32768}
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
     volumes:
       - ollama_data:/root/.ollama
     ipc: host
