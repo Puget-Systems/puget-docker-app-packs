@@ -79,22 +79,6 @@ Manual install (clone route):
 git clone -b intel-b70 https://github.com/Puget-Systems/puget-docker-app-pack.git && cd puget-docker-app-pack && ./install.sh
 ```
 
-### AMD Radeon (ROCm)
-
-For AMD Radeon AI PRO / Instinct GPUs, use the `amd-rocm` branch (multi-GPU vLLM + Ollama + ComfyUI on the ROCm backend). The installer auto-detects the AMD GPU, verifies the amdgpu/ROCm device access (`/dev/kfd` + render nodes) and render/video group membership, and builds the ROCm images — same flow as the NVIDIA path, just from a different branch.
-
-One-line install (setup route):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/amd-rocm/setup.sh -o setup.sh && BRANCH=amd-rocm bash setup.sh
-```
-
-Manual install (clone route):
-
-```bash
-git clone -b amd-rocm https://github.com/Puget-Systems/puget-docker-app-pack.git && cd puget-docker-app-pack && ./install.sh
-```
-
 ### Develop Branch
 
 For the latest features (not yet released):
