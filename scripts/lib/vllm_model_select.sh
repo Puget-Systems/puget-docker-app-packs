@@ -240,6 +240,15 @@ select_vllm_model() {
                 VLLM_GPU_MEM_UTIL="0.78" # Keep 22% headroom
             fi
         fi
+
+        # AMD/PCIe multi-GPU: vLLM's tensor-parallel all-reduce (RCCL) deadlocks on
+        # PCIe-connected Radeon GPUs with no XGMI/Infinity-Fabric link. Use pipeline
+        # parallelism (sequential layer split) instead. The compose emits
+        # --tensor-parallel-size=$GPU_COUNT first, then EXTRA_VLLM_ARGS, so the later
+        # --tensor-parallel-size 1 wins (argparse last-value), giving TP=1 + PP=N.
+        if [ "$VLLM_GPU_COUNT" -gt 1 ]; then
+            VLLM_EXTRA_ARGS="$VLLM_EXTRA_ARGS --tensor-parallel-size 1 --pipeline-parallel-size $VLLM_GPU_COUNT"
+        fi
     else
         # NVIDIA / Intel defaults
         VLLM_GPU_MEM_UTIL="0.90"

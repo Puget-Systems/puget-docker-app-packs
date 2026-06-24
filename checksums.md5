@@ -7,6 +7,6 @@ e06355b388aff315c0024ae1647957f2  ./packs/personal_llm/init.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
 4605d0cc23f6ed6a22d5a27d14840f8d  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
-60bcdaa5b5a3223576ba1b4123b26c46  ./scripts/lib/vllm_model_select.sh
+234ae81cb4226bc44a6e09a6b86c7cd6  ./scripts/lib/vllm_model_select.sh
 bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
 fd2e132d6ac4c87fd89833456a7cd087  ./setup.sh

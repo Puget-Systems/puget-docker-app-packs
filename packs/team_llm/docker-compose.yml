@@ -25,9 +25,25 @@ services:
       - NO_PROXY=localhost,127.0.0.1,0.0.0.0
       - no_proxy=localhost,127.0.0.1,0.0.0.0
       - HF_HOME=/root/.cache/huggingface
+      # AMD/PCIe: disable peer-to-peer so the RCCL all-reduce path doesn't hang.
+      - NCCL_P2P_DISABLE=1
     volumes:
       - vllm_cache:/root/.cache/huggingface
     ipc: host
+    # AMD ROCm device passthrough. NVIDIA uses the default nvidia container runtime
+    # (configured by install.sh) and ignores these; AMD has no default runtime, so the
+    # ROCm vLLM image needs the kfd + render nodes explicitly or it can't see the GPU
+    # ("Failed to infer device type"). group_add gives the container access to them.
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >
