@@ -86,7 +86,12 @@ select_vllm_model() {
 
     # Vendor-specific default image
     if [ "${GPU_VENDOR:-nvidia}" = "amd" ]; then
-        VLLM_IMAGE="vllm/vllm-openai-rocm:latest"
+        # Official AMD ROCm vLLM image, arch-pinned. vllm/vllm-openai-rocm:latest rotted
+        # to a CUDA build (torch +cuXXX, hip=None) and can't see the GPU. The rocm/vllm
+        # tags are per-GPU-arch; gfx120X covers RDNA4 (Radeon AI PRO R9700 / RX 9070, the
+        # Puget AMD test cards). For other arches use the matching rocm/vllm tag
+        # (gfx110X = RDNA3, gfx94X/gfx95X = Instinct) or override VLLM_IMAGE in .env.
+        VLLM_IMAGE="${VLLM_IMAGE_AMD:-rocm/vllm:rocm7.13.0_gfx120X-all_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1}"
     elif [ "${GPU_VENDOR:-nvidia}" = "intel" ]; then
         VLLM_IMAGE="intel/llm-scaler-vllm:0.14.0-b8.2.1"
     else

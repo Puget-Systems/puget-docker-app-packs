@@ -37,9 +37,6 @@ services:
     devices:
       - /dev/kfd
       - /dev/dri
-    group_add:
-      - video
-      - render
     security_opt:
       - seccomp:unconfined
     cap_add:
