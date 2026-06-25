@@ -55,6 +55,18 @@ write_env_blank() {
 prompt_env_proxy() {
     local env_file="${1:-.env}"
 
+    # HF mirror (Olah) endpoint — env-driven, independent of the Squid CACHE_PROXY.
+    # Set HF_ENDPOINT to point HuggingFace downloads at a local mirror instead of
+    # huggingface.co, e.g.  HF_ENDPOINT=http://172.19.168.179:8090 bash setup.sh
+    if [ -n "${HF_ENDPOINT:-}" ]; then
+        if echo "$HF_ENDPOINT" | grep -qE '^https?://[a-zA-Z0-9._-]+(:[0-9]+)?/?$'; then
+            write_env_var "HF_ENDPOINT" "$HF_ENDPOINT" "$env_file"
+            echo -e "${GREEN}✓ HF mirror endpoint from environment: $HF_ENDPOINT${NC}"
+        else
+            echo -e "${YELLOW}⚠ Ignoring malformed HF_ENDPOINT env var: '$HF_ENDPOINT'${NC}"
+        fi
+    fi
+
     # Non-interactive override: honor a preset CACHE_PROXY from the environment so a
     # known LAN proxy doesn't have to be typed on every (re)install. Set it inline
     #   CACHE_PROXY=http://172.19.168.179:3128 BRANCH=amd-rocm bash setup.sh

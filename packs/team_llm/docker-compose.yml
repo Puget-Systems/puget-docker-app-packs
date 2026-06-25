@@ -22,6 +22,9 @@ services:
       - NO_PROXY=localhost,127.0.0.1,0.0.0.0
       - no_proxy=localhost,127.0.0.1,0.0.0.0
       - HF_HOME=/root/.cache/huggingface
+      # HF mirror (Olah): set HF_ENDPOINT in .env to pull weights from a local mirror.
+      # Defaults to the real hub — must NOT be empty (an empty endpoint breaks downloads).
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
       # AMD/PCIe: disable peer-to-peer so the RCCL all-reduce path doesn't hang.
       - NCCL_P2P_DISABLE=1
     volumes:
