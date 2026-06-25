@@ -170,7 +170,7 @@ select_vllm_model() {
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
                 echo -e "${RED}✗ Invalid model ID format: '${VLLM_MODEL_ID}'${NC}"
-                echo "  Expected format: owner/model-name (e.g. cyankiwi/Qwen3.6-35B-A3B-GPTQ-Int4)"
+                echo "  Expected format: owner/model-name (e.g. cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit)"
                 VLLM_MODEL_ID=""
                 return 2
             fi
