@@ -839,12 +839,15 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     cd "$INSTALL_DIR"
 
     # Layer the per-vendor GPU compose override (device mounts / runtime / vendor Dockerfile)
-    # over the GPU-agnostic base, so every `docker compose` call below (down/build/up/exec)
-    # targets the detected GPU. docker compose reads COMPOSE_FILE for all subcommands.
+    # over the GPU-agnostic base. PERSIST it in .env (not just export) so EVERY docker compose
+    # call — this installer, init.sh, a container restart, or a manual `docker compose up` —
+    # applies the override. An ephemeral export only covers this script's own launch, which
+    # left containers with no /dev/kfd → "Failed to infer device type" on AMD. docker compose
+    # reads COMPOSE_FILE from .env; relative paths resolve against the pack dir it runs from.
     # GPU-agnostic packs (e.g. docker-base) and unknown GPUs have no override → base only.
     if [ -n "${GPU_VENDOR:-}" ] && [ -f "$INSTALL_DIR/docker-compose.${GPU_VENDOR}.yml" ]; then
-        # Absolute paths so COMPOSE_FILE survives any later `cd` in this script.
-        export COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml:$INSTALL_DIR/docker-compose.${GPU_VENDOR}.yml"
+        write_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.${GPU_VENDOR}.yml" "$INSTALL_DIR/.env"
+        export COMPOSE_FILE="docker-compose.yml:docker-compose.${GPU_VENDOR}.yml"
         echo -e "${BLUE}GPU profile: ${GPU_VENDOR} (compose override: docker-compose.${GPU_VENDOR}.yml)${NC}"
     fi
 
