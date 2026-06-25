@@ -1,0 +1,37 @@
+# Dockerfile.xpu
+# Puget Systems — Intel Arc Pro B70 (Battlemage / Xe2) vLLM image.
+#
+# Built on Intel's purpose-built multi-GPU LLM Scaler image, which ships the
+# correct Level Zero / oneCCL stack for the B70 out of the box (no driver PPA
+# rebuild needed) and supports tensor parallelism across multiple cards. This is
+# the exact base our published B70 benchmarks were validated on.
+#
+# The only change we add is a small compatibility patch (see below) so the
+# multimodal Qwen3.6 models (27B dense, 35B-A3B MoE) load on this build.
+#
+# Usage:
+#   Build:   docker build -f Dockerfile.xpu -t puget-vllm-xpu:b70 .
+#   Compose: Set VLLM_IMAGE=puget-vllm-xpu:b70 in your .env (the model-select
+#            menu sets this automatically on Intel hardware).
+
+ARG VLLM_BASE_IMAGE=intel/llm-scaler-vllm:0.14.0-b8.2.1
+FROM ${VLLM_BASE_IMAGE}
+
+USER root
+
+# Compatibility patch: Qwen3-VL ships a Qwen2VLImageProcessorFast that does not
+# expose `.max_pixels` / `.min_pixels` as attributes (they live in `.size`), so
+# vLLM's qwen2_vl.py crashes with AttributeError when loading Qwen3.6-27B / 35B.
+# Make the attribute access tolerant (fall back to None, which the existing
+# `or image_processor.size[...]` handling already covers). Only the bare
+# attribute accesses are rewritten; the `size["max_pixels"]` dict lookups are
+# intentionally left untouched.
+RUN for P in $(find / -path '*/vllm/model_executor/models/qwen2_vl.py' 2>/dev/null); do \
+        sed -i -E \
+            -e 's/image_processor\.min_pixels/getattr(image_processor,"min_pixels",None)/g' \
+            -e 's/image_processor\.max_pixels/getattr(image_processor,"max_pixels",None)/g' \
+            "$P"; \
+        echo "patched: $P"; \
+    done
+
+# Entrypoint/CMD inherited from the LLM Scaler base image.
