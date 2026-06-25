@@ -136,183 +136,234 @@ echo -e "  Then ${RED}LOG OUT${NC} and back in for changes to take effect."
 echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Check for NVIDIA Drivers (required for GPU stacks)
-# We check if nvidia-smi exists AND returns success (0)
-if ! command -v nvidia-smi &> /dev/null || ! nvidia-smi &> /dev/null; then
-    echo -e "${RED}✗ NVIDIA drivers not detected (or not active).${NC}"
-    echo "  GPU-accelerated stacks (ComfyUI, Office Inference) require NVIDIA drivers."
-    
-    # Offer automated installation
-    read -p "  Would you like to install the recommended NVIDIA drivers now? (Y/n): " INSTALL_DRIVERS
-    if [[ "$INSTALL_DRIVERS" != "n" && "$INSTALL_DRIVERS" != "N" ]]; then
-        # Ensure ubuntu-drivers-common is available (pre-installed on Ubuntu, but verify)
-        if ! command -v ubuntu-drivers &> /dev/null; then
-            echo -e "${BLUE}Installing driver detection tools...${NC}"
-            sudo apt update && sudo apt install -y ubuntu-drivers-common
-        fi
-        
-        # Show detected GPU and recommended driver
-        echo -e "${BLUE}Detecting GPU hardware...${NC}"
-        ubuntu-drivers devices 2>/dev/null || true
-        echo ""
-        
-        echo -e "${BLUE}Installing recommended NVIDIA drivers for your GPU...${NC}"
-        DRIVER_OUTPUT=$(sudo ubuntu-drivers install 2>&1)
-        DRIVER_EXIT=$?
-        echo "$DRIVER_OUTPUT"
-        
-        if [ $DRIVER_EXIT -ne 0 ]; then
-            echo -e "${RED}✗ Driver installation failed.${NC}"
-            echo "  You may need to install drivers manually."
-            echo "  Try: sudo apt update && sudo ubuntu-drivers install"
-            exit 1
-        fi
-        
-        # Check if anything was actually installed (vs already at newest version)
-        if echo "$DRIVER_OUTPUT" | grep -qE "(0 newly installed|already the newest version|No drivers found)"; then
-            # Drivers are already installed but nvidia-smi still fails.
-            # This is NOT a "just reboot" situation — something deeper is wrong.
-            echo ""
-            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-            echo -e "${RED}⚠ NVIDIA drivers are installed but the GPU is not responding.${NC}"
-            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-            echo ""
-            echo "  The driver package is already installed, but nvidia-smi cannot"
-            echo "  communicate with the GPU. Common causes:"
-            echo ""
-            echo -e "  1. ${YELLOW}Secure Boot${NC} is blocking the unsigned NVIDIA kernel module."
-            echo "     Check:  mokutil --sb-state"
-            echo "     Fix:    sudo mokutil --disable-validation  (then reboot)"
-            echo ""
-            echo -e "  2. ${YELLOW}Kernel module not loaded${NC} after a kernel update."
-            echo "     Check:  lsmod | grep nvidia"
-            echo "     Fix:    sudo modprobe nvidia"
-            echo ""
-            echo -e "  3. ${YELLOW}Kernel/driver version mismatch${NC} (new kernel, old DKMS build)."
-            echo "     Fix:    sudo ubuntu-drivers install"
-            echo "             sudo dkms autoinstall"
-            echo "             Then reboot."
-            echo ""
-            echo -e "  4. ${YELLOW}Wrong driver variant${NC} for your GPU generation."
-            echo "     Check:  ubuntu-drivers devices"
-            echo "     (Blackwell/RTX 50 series requires the '-open' kernel module variant)"
-            echo ""
-            echo "  Resolve the issue above and re-run this installer."
-            exit 1
-        else
-            # Drivers were freshly installed — reboot is genuinely needed
-            echo -e "${YELLOW}⚠ IMPORTANT: Drivers installed.${NC}"
-            echo -e "${YELLOW}  You MUST REBOOT your system before the GPU will be available.${NC}"
-            echo "  Please reboot and run this installer again."
-            exit 0
-        fi
+# Check for GPU Drivers and Runtimes
+detect_gpus || true
+
+if [ "$GPU_VENDOR" == "amd" ]; then
+    echo -e "${GREEN}✓ AMD GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
+    echo -e "${BLUE}Checking AMD ROCm / amdgpu access...${NC}"
+    # The ROCm app-pack containers (vLLM-ROCm, ComfyUI Dockerfile.rocm) ship their own
+    # ROCm userspace; the host only needs the amdgpu kernel driver (which exposes /dev/kfd
+    # and the render nodes) plus render/video group membership for device passthrough.
+    if [ -e /dev/kfd ] && ls /dev/dri/renderD* > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ amdgpu compute interface present (/dev/kfd + render nodes).${NC}"
     else
-        echo "  Skipping driver installation. GPU containers may fail to start."
+        echo -e "${RED}✗ /dev/kfd or /dev/dri/renderD* missing — the amdgpu kernel driver is not active.${NC}"
+        echo "  Install the AMD GPU driver / ROCm (https://rocm.docs.amd.com) and reboot, then re-run."
     fi
-else
-    DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-    GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-    echo -e "${GREEN}✓ NVIDIA Driver found: $DRIVER_VERSION ($GPU_NAME)${NC}"
-fi
-
-# Check for NVIDIA Container Toolkit (required for GPU access)
-# Use `command -v nvidia-ctk` — dpkg -l can falsely report packages as present
-# when they are in a "desired but not installed" (un) state.
-if ! command -v nvidia-ctk &> /dev/null; then
-    echo -e "${RED}✗ NVIDIA Container Toolkit is not installed.${NC}"
-    echo "  This is required for Docker to access NVIDIA GPUs."
-    read -p "  Would you like to install NVIDIA Container Toolkit now? (Y/n): " INSTALL_NVIDIA
-    if [[ "$INSTALL_NVIDIA" != "n" && "$INSTALL_NVIDIA" != "N" ]]; then
-        echo -e "${BLUE}Installing NVIDIA Container Toolkit...${NC}"
-        # Add NVIDIA repo (--yes allows re-runs without "file already exists" error)
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
-            sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-            sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-            sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-        sudo apt update && sudo apt install -y nvidia-container-toolkit
-        echo -e "${GREEN}✓ NVIDIA Container Toolkit installed.${NC}"
-    fi
-else
-    echo -e "${GREEN}✓ NVIDIA Container Toolkit found.${NC}"
-fi
-
-# Hard gate: GPU stacks CANNOT work without the Container Toolkit.
-# Fail early with a clear message instead of a cryptic Docker error at launch.
-if ! command -v nvidia-ctk &> /dev/null; then
-    echo ""
-    echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${RED}✗ NVIDIA Container Toolkit is required but not installed.${NC}"
-    echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "  Without it, Docker cannot access NVIDIA GPUs and GPU-accelerated"
-    echo "  containers (Ollama, vLLM, ComfyUI) will fail to start with:"
-    echo ""
-    echo -e "  ${YELLOW}could not select device driver \"nvidia\" with capabilities: [[gpu]]${NC}"
-    echo ""
-    echo "  Install manually with:"
-    echo -e "  ${BLUE}curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \\"
-    echo -e "    sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
-    echo -e "  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\"
-    echo -e "    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \\"
-    echo -e "    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
-    echo -e "  sudo apt update && sudo apt install -y nvidia-container-toolkit${NC}"
-    echo ""
-    echo "  Then re-run this installer."
-    exit 1
-fi
-
-# ALWAYS configure Docker for NVIDIA GPU access.
-# nvidia-ctk runtime configure is idempotent — safe to run every time.
-# We run it unconditionally because `docker info | grep nvidia` can false-positive
-# on the GPU device name (e.g. "NVIDIA GeForce RTX 5090") even when the runtime
-# is NOT actually registered.
-if command -v nvidia-ctk &> /dev/null && command -v docker &> /dev/null; then
-    echo -e "${BLUE}Configuring Docker for NVIDIA GPU access...${NC}"
-    sudo nvidia-ctk runtime configure --runtime=docker
-    sudo systemctl restart docker
-
-    # Wait for Docker to restart
-    echo "Waiting for Docker to restart..."
-    for i in {1..15}; do
-        if docker info &> /dev/null 2>&1; then
-            break
+    # Container device passthrough needs the invoking user in the render/video groups.
+    for _grp in render video; do
+        if ! id -nG "${USER:-$(id -un)}" 2>/dev/null | grep -qw "$_grp"; then
+            echo -e "${YELLOW}⚠ ${USER} is not in the '${_grp}' group — adding it (needed for GPU device access).${NC}"
+            sudo usermod -aG "$_grp" "$USER" 2>/dev/null && echo "  Added to '${_grp}' (log out and back in for it to take effect)." || true
         fi
-        sleep 1
     done
 
-    echo -e "${GREEN}✓ Docker GPU runtime configured.${NC}"
-
-    # Verify GPU access with a real container — this is the definitive test.
-    echo "Verifying GPU access in Docker (this may pull an image on first run)..."
-    if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi &> /dev/null; then
-        echo -e "${GREEN}✓ GPU accessible from Docker.${NC}"
+elif [ "$GPU_VENDOR" == "intel" ]; then
+    echo -e "${GREEN}✓ Intel ARC GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
+    echo -e "${BLUE}Checking Intel Compute Runtime...${NC}"
+    
+    if ! dpkg -l | grep -q "intel-level-zero-gpu"; then
+        echo -e "${RED}✗ Intel Level Zero / Compute Runtime not fully installed.${NC}"
+        read -p "  Would you like to install Intel Compute Runtime now? (Y/n): " INSTALL_INTEL
+        if [[ "$INSTALL_INTEL" != "n" && "$INSTALL_INTEL" != "N" ]]; then
+            sudo apt update
+            sudo apt install -y intel-opencl-icd libze-intel-gpu1 intel-media-va-driver-non-free clinfo
+            echo -e "${GREEN}✓ Intel Compute Runtime installed.${NC}"
+        else
+            echo "  Skipping driver installation. GPU containers may fail to start."
+        fi
     else
+        echo -e "${GREEN}✓ Intel Compute Runtime found.${NC}"
+    fi
+
+    # Check for render nodes
+    if ! ls /dev/dri/renderD* 1> /dev/null 2>&1; then
+        echo -e "${RED}✗ Cannot access /dev/dri/renderD*. Docker passthrough will fail.${NC}"
+    else
+        echo -e "${GREEN}✓ GPU Render nodes available.${NC}"
+    fi
+
+elif [ "$GPU_VENDOR" == "nvidia" ] || command -v nvidia-smi &> /dev/null; then
+    # We check if nvidia-smi exists AND returns success (0)
+    if ! command -v nvidia-smi &> /dev/null || ! nvidia-smi &> /dev/null; then
+        echo -e "${RED}✗ NVIDIA drivers not detected (or not active).${NC}"
+        echo "  GPU-accelerated stacks (ComfyUI, Office Inference) require NVIDIA drivers."
+        
+        # Offer automated installation
+        read -p "  Would you like to install the recommended NVIDIA drivers now? (Y/n): " INSTALL_DRIVERS
+        if [[ "$INSTALL_DRIVERS" != "n" && "$INSTALL_DRIVERS" != "N" ]]; then
+            # Ensure ubuntu-drivers-common is available (pre-installed on Ubuntu, but verify)
+            if ! command -v ubuntu-drivers &> /dev/null; then
+                echo -e "${BLUE}Installing driver detection tools...${NC}"
+                sudo apt update && sudo apt install -y ubuntu-drivers-common
+            fi
+            
+            # Show detected GPU and recommended driver
+            echo -e "${BLUE}Detecting GPU hardware...${NC}"
+            ubuntu-drivers devices 2>/dev/null || true
+            echo ""
+            
+            echo -e "${BLUE}Installing recommended NVIDIA drivers for your GPU...${NC}"
+            DRIVER_OUTPUT=$(sudo ubuntu-drivers install 2>&1)
+            DRIVER_EXIT=$?
+            echo "$DRIVER_OUTPUT"
+            
+            if [ $DRIVER_EXIT -ne 0 ]; then
+                echo -e "${RED}✗ Driver installation failed.${NC}"
+                echo "  You may need to install drivers manually."
+                echo "  Try: sudo apt update && sudo ubuntu-drivers install"
+                exit 1
+            fi
+            
+            # Check if anything was actually installed (vs already at newest version)
+            if echo "$DRIVER_OUTPUT" | grep -qE "(0 newly installed|already the newest version|No drivers found)"; then
+                # Drivers are already installed but nvidia-smi still fails.
+                # This is NOT a "just reboot" situation — something deeper is wrong.
+                echo ""
+                echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+                echo -e "${RED}⚠ NVIDIA drivers are installed but the GPU is not responding.${NC}"
+                echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+                echo ""
+                echo "  The driver package is already installed, but nvidia-smi cannot"
+                echo "  communicate with the GPU. Common causes:"
+                echo ""
+                echo -e "  1. ${YELLOW}Secure Boot${NC} is blocking the unsigned NVIDIA kernel module."
+                echo "     Check:  mokutil --sb-state"
+                echo "     Fix:    sudo mokutil --disable-validation  (then reboot)"
+                echo ""
+                echo -e "  2. ${YELLOW}Kernel module not loaded${NC} after a kernel update."
+                echo "     Check:  lsmod | grep nvidia"
+                echo "     Fix:    sudo modprobe nvidia"
+                echo ""
+                echo -e "  3. ${YELLOW}Kernel/driver version mismatch${NC} (new kernel, old DKMS build)."
+                echo "     Fix:    sudo ubuntu-drivers install"
+                echo "             sudo dkms autoinstall"
+                echo "             Then reboot."
+                echo ""
+                echo -e "  4. ${YELLOW}Wrong driver variant${NC} for your GPU generation."
+                echo "     Check:  ubuntu-drivers devices"
+                echo "     (Blackwell/RTX 50 series requires the '-open' kernel module variant)"
+                echo ""
+                echo "  Resolve the issue above and re-run this installer."
+                exit 1
+            else
+                # Drivers were freshly installed — reboot is genuinely needed
+                echo -e "${YELLOW}⚠ IMPORTANT: Drivers installed.${NC}"
+                echo -e "${YELLOW}  You MUST REBOOT your system before the GPU will be available.${NC}"
+                echo "  Please reboot and run this installer again."
+                exit 0
+            fi
+        else
+            echo "  Skipping driver installation. GPU containers may fail to start."
+        fi
+    else
+        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+        GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+        echo -e "${GREEN}✓ NVIDIA Driver found: $DRIVER_VERSION ($GPU_NAME)${NC}"
+    fi
+
+    # Check for NVIDIA Container Toolkit (required for GPU access)
+    # Use `command -v nvidia-ctk` — dpkg -l can falsely report packages as present
+    # when they are in a "desired but not installed" (un) state.
+    if ! command -v nvidia-ctk &> /dev/null; then
+        echo -e "${RED}✗ NVIDIA Container Toolkit is not installed.${NC}"
+        echo "  This is required for Docker to access NVIDIA GPUs."
+        read -p "  Would you like to install NVIDIA Container Toolkit now? (Y/n): " INSTALL_NVIDIA
+        if [[ "$INSTALL_NVIDIA" != "n" && "$INSTALL_NVIDIA" != "N" ]]; then
+            echo -e "${BLUE}Installing NVIDIA Container Toolkit...${NC}"
+            # Add NVIDIA repo (--yes allows re-runs without "file already exists" error)
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+                sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+                sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+            sudo apt update && sudo apt install -y nvidia-container-toolkit
+            echo -e "${GREEN}✓ NVIDIA Container Toolkit installed.${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ NVIDIA Container Toolkit found.${NC}"
+    fi
+
+    # Hard gate: GPU stacks CANNOT work without the Container Toolkit.
+    # Fail early with a clear message instead of a cryptic Docker error at launch.
+    if ! command -v nvidia-ctk &> /dev/null; then
         echo ""
         echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-        echo -e "${RED}✗ Docker cannot access the NVIDIA GPU.${NC}"
+        echo -e "${RED}✗ NVIDIA Container Toolkit is required but not installed.${NC}"
         echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
         echo ""
-        echo "  The NVIDIA driver works (nvidia-smi passed), and the Container"
-        echo "  Toolkit is installed, but Docker still cannot access the GPU."
+        echo "  Without it, Docker cannot access NVIDIA GPUs and GPU-accelerated"
+        echo "  containers (Ollama, vLLM, ComfyUI) will fail to start with:"
         echo ""
-        echo "  Common causes:"
-        echo -e "  1. ${YELLOW}Reboot required${NC} — the toolkit was just installed and the"
-        echo "     kernel modules need to be reloaded."
-        echo -e "     Fix: ${BLUE}sudo reboot${NC}, then re-run this installer."
+        echo -e "  ${YELLOW}could not select device driver \"nvidia\" with capabilities: [[gpu]]${NC}"
         echo ""
-        echo -e "  2. ${YELLOW}Toolkit/driver version mismatch${NC} — the container toolkit"
-        echo "     version may not support this driver."
-        echo -e "     Check: ${BLUE}nvidia-ctk --version${NC}"
-        echo -e "     Fix:   ${BLUE}sudo apt update && sudo apt install --reinstall nvidia-container-toolkit${NC}"
+        echo "  Install manually with:"
+        echo -e "  ${BLUE}curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \\"
+        echo -e "    sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
+        echo -e "  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\"
+        echo -e "    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \\"
+        echo -e "    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
+        echo -e "  sudo apt update && sudo apt install -y nvidia-container-toolkit${NC}"
         echo ""
-        echo -e "  3. ${YELLOW}Docker daemon config conflict${NC} — /etc/docker/daemon.json"
-        echo "     may have a conflicting configuration."
-        echo -e "     Check: ${BLUE}cat /etc/docker/daemon.json${NC}"
-        echo ""
-        echo "  After fixing, re-run this installer."
+        echo "  Then re-run this installer."
         exit 1
     fi
+
+    # ALWAYS configure Docker for NVIDIA GPU access.
+    # nvidia-ctk runtime configure is idempotent — safe to run every time.
+    # We run it unconditionally because `docker info | grep nvidia` can false-positive
+    # on the GPU device name (e.g. "NVIDIA GeForce RTX 5090") even when the runtime
+    # is NOT actually registered.
+    if command -v nvidia-ctk &> /dev/null && command -v docker &> /dev/null; then
+        echo -e "${BLUE}Configuring Docker for NVIDIA GPU access...${NC}"
+        sudo nvidia-ctk runtime configure --runtime=docker
+        sudo systemctl restart docker
+
+        # Wait for Docker to restart
+        echo "Waiting for Docker to restart..."
+        for i in {1..15}; do
+            if docker info &> /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+
+        echo -e "${GREEN}✓ Docker GPU runtime configured.${NC}"
+
+        # Verify GPU access with a real container — this is the definitive test.
+        echo "Verifying GPU access in Docker (this may pull an image on first run)..."
+        if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi &> /dev/null; then
+            echo -e "${GREEN}✓ GPU accessible from Docker.${NC}"
+        else
+            echo ""
+            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+            echo -e "${RED}✗ Docker cannot access the NVIDIA GPU.${NC}"
+            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+            echo ""
+            echo "  The NVIDIA driver works (nvidia-smi passed), and the Container"
+            echo "  Toolkit is installed, but Docker still cannot access the GPU."
+            echo ""
+            echo "  Common causes:"
+            echo -e "  1. ${YELLOW}Reboot required${NC} — the toolkit was just installed and the"
+            echo "     kernel modules need to be reloaded."
+            echo -e "     Fix: ${BLUE}sudo reboot${NC}, then re-run this installer."
+            echo ""
+            echo -e "  2. ${YELLOW}Toolkit/driver version mismatch${NC} — the container toolkit"
+            echo "     version may not support this driver."
+            echo -e "     Check: ${BLUE}nvidia-ctk --version${NC}"
+            echo -e "     Fix:   ${BLUE}sudo apt update && sudo apt install --reinstall nvidia-container-toolkit${NC}"
+            echo ""
+            echo -e "  3. ${YELLOW}Docker daemon config conflict${NC} — /etc/docker/daemon.json"
+            echo "     may have a conflicting configuration."
+            echo -e "     Check: ${BLUE}cat /etc/docker/daemon.json${NC}"
+            echo ""
+            echo "  After fixing, re-run this installer."
+            exit 1
+        fi
+    fi
+else
+    echo -e "${YELLOW}⚠ No NVIDIA or Intel GPUs detected. Only CPU workloads will be supported.${NC}"
 fi
 
 # Re-check after potential installs
@@ -726,7 +777,6 @@ case $FLAVOR in
             write_env_var "MAX_CONTEXT" "$VLLM_MAX_CTX" "$INSTALL_DIR/.env"
             write_env_var "GPU_MEMORY_UTILIZATION" "$VLLM_GPU_MEM_UTIL" "$INSTALL_DIR/.env"
             write_env_var "REASONING_ARGS" "$VLLM_REASONING_ARGS" "$INSTALL_DIR/.env"
-            write_env_var "THINKING_ARGS" "$VLLM_THINKING_ARGS" "$INSTALL_DIR/.env"
             write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" "$INSTALL_DIR/.env"
             write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
             write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
@@ -736,6 +786,19 @@ case $FLAVOR in
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
             echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
             echo -e "  The model will download on first launch."
+            
+            # --- Custom Build for Intel B70 ---
+            if [[ "$VLLM_IMAGE" == "puget-vllm-xpu:b70" ]]; then
+                echo ""
+                echo -e "${BLUE}Checking for custom Intel B70 container image...${NC}"
+                if [[ "$(docker images -q puget-vllm-xpu:b70 2> /dev/null)" == "" ]]; then
+                    echo -e "${YELLOW}Building puget-vllm-xpu:b70 (this may take 5-10 minutes)...${NC}"
+                    (cd "$INSTALL_DIR" && docker build -t puget-vllm-xpu:b70 -f Dockerfile.xpu .)
+                    echo -e "${GREEN}✓ Image built successfully.${NC}"
+                else
+                    echo -e "${GREEN}✓ Custom Intel B70 image already exists.${NC}"
+                fi
+            fi
         elif [ -n "$VLLM_MODEL_ID" ]; then
             # Custom model (return code 2) — write what we have
             write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
@@ -773,24 +836,21 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     # or conflicting names we know about (like puget_comfy_ui)
     docker compose down 2>/dev/null || true
     
-    # Check for ALL known container name conflicts.
-    # docker compose down only removes containers from the CURRENT project.
-    # If the user previously installed to a different directory, those orphan
-    # containers keep running under the old project name and cause
-    # "name already in use" errors on `docker compose up`.
-    declare -A PACK_CONTAINERS=(
-        [comfy_ui]="puget_comfy_ui"
-        [team_llm]="puget_vllm puget_team_webui puget_team_brain"
-        [personal_llm]="puget_ollama puget_personal_webui"
-    )
-    CONFLICT_NAMES="${PACK_CONTAINERS[$FLAVOR]:-}"
-    if [ -n "$CONFLICT_NAMES" ]; then
-        for CNAME in $CONFLICT_NAMES; do
-            if docker ps -a --format '{{.Names}}' | grep -q "^${CNAME}$"; then
-                echo -e "${YELLOW}⚠ Removing existing container '${CNAME}' to avoid name conflict...${NC}"
-                docker rm -f "$CNAME" 2>/dev/null || true
+    # Specifically check for the comfy_ui conflict the user saw
+    if [ "$FLAVOR" == "comfy_ui" ]; then
+        if docker ps -a --format '{{.Names}}' | grep -q "^puget_comfy_ui$"; then
+            echo -e "${YELLOW}⚠ Conflict: A container named 'puget_comfy_ui' already exists.${NC}"
+            read -p "  Would you like to remove the existing container to continue? (y/N): " REMOVE_CONFLICT
+            if [[ "$REMOVE_CONFLICT" == "y" || "$REMOVE_CONFLICT" == "Y" ]]; then
+                echo -e "${BLUE}Removing existing container 'puget_comfy_ui'...${NC}"
+                docker rm -f puget_comfy_ui 2>/dev/null || true
+            else
+                echo -e "${RED}Error: Cannot launch because of name conflict.${NC}"
+                echo "Please stop/remove the existing container or choose a different installation name."
+                cd - > /dev/null
+                exit 1
             fi
-        done
+        fi
     fi
 
     # Smart rebuild: detect if build files changed → --no-cache rebuild

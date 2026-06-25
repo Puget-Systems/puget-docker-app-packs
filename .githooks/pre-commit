@@ -11,8 +11,8 @@ if [ -n "$CHANGED_SH" ]; then
     # Regenerate checksums.md5 from the working tree
     # (update_checksum.sh operates on working tree files)
     bash "$REPO_ROOT/scripts/update_checksum.sh"
-    git add "$REPO_ROOT/checksums.md5" "$REPO_ROOT/install.sh.md5"
-    echo "✓ Auto-updated checksums.md5 + install.sh.md5"
+    git add "$REPO_ROOT/checksums.md5"
+    echo "✓ Auto-updated checksums.md5"
 
     # Run shellcheck if available (warnings only, don't block commit)
     if command -v shellcheck &>/dev/null; then
