@@ -49,9 +49,10 @@ docker run -d --name "$NAME" \
    --gpu-memory-utilization $UTIL --enforce-eager --trust-remote-code --disable-custom-all-reduce $EXTRA" \
   >/dev/null 2>&1
 
-# Wait for the server (first run also downloads weights). Bail early if the container dies.
+# Wait for the server (first run also downloads weights; int4+TP loads can take 15+ min on
+# the newer community vLLM). Bail early if the container dies.
 c=000
-for _ in $(seq 1 60); do
+for _ in $(seq 1 150); do
   c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:$PORT/v1/models" 2>/dev/null || echo 000)
   [ "$c" = 200 ] && break
   if ! docker ps -q --filter "name=^${NAME}$" | grep -q .; then
