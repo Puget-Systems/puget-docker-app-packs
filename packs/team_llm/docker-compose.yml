@@ -1,18 +1,15 @@
 services:
   # 1. Inference Engine (vLLM)
   inference:
-    # Standard upstream image (used for all models except Gemma 4).
-    # For Gemma 4: run `docker compose build inference` once to produce
-    # puget-vllm-gemma4:latest using Dockerfile.gemma4, then set
-    # VLLM_IMAGE=puget-vllm-gemma4:latest in .env.
+    # The vLLM image is PULLED, not built — NVIDIA: vllm/vllm-openai, AMD: rocm/vllm,
+    # Intel: intel/llm-scaler-vllm — selected via VLLM_IMAGE in .env.
+    # IMPORTANT: do NOT add a `build:` block to this service. docker compose tags a
+    # build's output with the service's `image:` name, so `smart_build`/`docker compose
+    # build` would rebuild and CLOBBER the pulled image — e.g. the old Dockerfile.gemma4
+    # (FROM a CUDA vllm/vllm-openai base) overwrote the ROCm rocm/vllm image, leaving a
+    # CUDA torch that can't see the AMD GPU ("Failed to infer device type"). Build any
+    # derived image (e.g. Gemma 4) under a DISTINCT tag and point VLLM_IMAGE at it.
     image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.gemma4
-      args:
-        VLLM_BASE_IMAGE: vllm/vllm-openai:v0.20.2
-      # Only invoked when you explicitly run `docker compose build inference`.
-      # Normal `docker compose up` skips the build if the image already exists.
     container_name: puget_vllm
     restart: unless-stopped
 

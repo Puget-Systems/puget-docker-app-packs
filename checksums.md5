@@ -3,7 +3,7 @@ fd7a8d4337c6289b371b1464fd2d543f  ./install.sh
 e06355b388aff315c0024ae1647957f2  ./packs/personal_llm/init.sh
 37977bb55e43a9919f64e2c117635819  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
-1ef7849a97994a2766f21daf107d0e69  ./scripts/lib/env_write.sh
+fe9ab9f8514dccab6fe6b4d6966a2480  ./scripts/lib/env_write.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
 4605d0cc23f6ed6a22d5a27d14840f8d  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
