@@ -55,6 +55,19 @@ write_env_blank() {
 prompt_env_proxy() {
     local env_file="${1:-.env}"
 
+    # Non-interactive override: honor a preset CACHE_PROXY from the environment so a
+    # known LAN proxy doesn't have to be typed on every (re)install. Set it inline
+    #   CACHE_PROXY=http://172.19.168.179:3128 BRANCH=amd-rocm bash setup.sh
+    # or export it in ~/.bashrc for good.
+    if [ -n "${CACHE_PROXY:-}" ]; then
+        if echo "$CACHE_PROXY" | grep -qE '^https?://[a-zA-Z0-9._-]+(:[0-9]+)?/?$'; then
+            write_env_var "CACHE_PROXY" "$CACHE_PROXY" "$env_file"
+            echo -e "${GREEN}✓ Cache proxy from environment: $CACHE_PROXY${NC}"
+            return 0
+        fi
+        echo -e "${YELLOW}⚠ Ignoring malformed CACHE_PROXY env var: '$CACHE_PROXY'${NC}"
+    fi
+
     echo -e "${YELLOW}Cache Proxy (Optional):${NC}"
     echo "  If this system is on a LAN with a Puget cache proxy (Squid),"
     echo "  model downloads can be cached to avoid re-downloading."
