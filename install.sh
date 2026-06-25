@@ -771,6 +771,21 @@ case $FLAVOR in
         read -p "Select [1-${MENU_MAX}]: " VLLM_MODEL_SELECT
 
         if select_vllm_model "$VLLM_MODEL_SELECT"; then
+            # Memory-aware context cap. When the menu leaves MAX_CONTEXT unset, a model's
+            # native context (often 128K-262K) can need more KV cache than fits after the
+            # weights load, and vLLM crash-loops ("max seq len needs N GiB KV cache >
+            # available"). Size the cap to the VRAM left after weights: small models keep
+            # their native context (ample headroom), large models are capped so the KV
+            # cache fits. Mirrors the bench's smart KV-cache cap.
+            if [ -z "${VLLM_MAX_CTX:-}" ]; then
+                _free_vram=$(awk "BEGIN{printf \"%d\", ${TOTAL_VRAM:-0} * ${VLLM_GPU_MEM_UTIL:-0.90} - ${VLLM_MODEL_SIZE_GB:-0}}")
+                if   [ "$_free_vram" -ge 30 ]; then VLLM_MAX_CTX=""       # ample room → native context
+                elif [ "$_free_vram" -ge 16 ]; then VLLM_MAX_CTX=65536
+                elif [ "$_free_vram" -ge 8 ];  then VLLM_MAX_CTX=32768
+                else                                VLLM_MAX_CTX=16384
+                fi
+                [ -n "$VLLM_MAX_CTX" ] && echo -e "  ${YELLOW}Context capped to ${VLLM_MAX_CTX} (KV-cache headroom after ~${VLLM_MODEL_SIZE_GB:-?}GB of weights)${NC}"
+            fi
             write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
             write_env_var "VLLM_IMAGE" "$VLLM_IMAGE" "$INSTALL_DIR/.env"
             write_env_var "GPU_COUNT" "$VLLM_GPU_COUNT" "$INSTALL_DIR/.env"
@@ -781,7 +796,7 @@ case $FLAVOR in
             write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
             write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
-            ctx_display=${VLLM_MAX_CTX:-auto (vLLM will size based on available VRAM)}
+            ctx_display=${VLLM_MAX_CTX:-model native (ample VRAM headroom)}
             echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${ctx_display} context"
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
             echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
