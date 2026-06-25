@@ -3,7 +3,7 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 2c4eb02bcd3cc17de5c6dad9e0ae07f4  ./packs/personal_llm/init.sh
 37977bb55e43a9919f64e2c117635819  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
-b7304e925af93ec8ed433ab788bb8c38  ./scripts/experiments/bench_amd_quant_parallel.sh
+2f79b8769724465cc478026c4ec132df  ./scripts/experiments/bench_amd_quant_parallel.sh
 1887d91f37251bc7092e7321b3bd0cc6  ./scripts/lib/env_write.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
 4605d0cc23f6ed6a22d5a27d14840f8d  ./scripts/lib/ollama_model_select.sh

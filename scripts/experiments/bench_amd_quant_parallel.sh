@@ -49,10 +49,10 @@ docker run -d --name "$NAME" \
    --gpu-memory-utilization $UTIL --enforce-eager --trust-remote-code --disable-custom-all-reduce $EXTRA" \
   >/dev/null 2>&1
 
-# Wait for the server (first run also downloads weights; int4+TP loads can take 15+ min on
-# the newer community vLLM). Bail early if the container dies.
+# Wait for the server. AMD int4+TP weight loads on the community vLLM can take up to ~1 hour;
+# wait ~80 min and only bail if the container actually dies (so a slow load isn't killed).
 c=000
-for _ in $(seq 1 150); do
+for _ in $(seq 1 480); do
   c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:$PORT/v1/models" 2>/dev/null || echo 000)
   [ "$c" = 200 ] && break
   if ! docker ps -q --filter "name=^${NAME}$" | grep -q .; then
