@@ -1,0 +1,44 @@
+name: validate-models
+
+# Verify every model URI the menus reference is reachable on HuggingFace / Ollama —
+# without running the models (most are too big for CI). Catches the real failure modes:
+# a repo deleted/renamed (401), gated so general users can't pull it (403), or a
+# typo/phantom model (404). The nightly run catches *rot* — repos that disappear or get
+# gated after the fact (exactly what happened to the GPTQ repos).
+on:
+  push:
+    paths:
+      - 'scripts/lib/vllm_model_select.sh'
+      - 'scripts/lib/ollama_model_select.sh'
+      - 'scripts/validate_models.sh'
+      - '.github/workflows/validate-models.yml'
+  pull_request:
+    paths:
+      - 'scripts/lib/vllm_model_select.sh'
+      - 'scripts/lib/ollama_model_select.sh'
+      - 'scripts/validate_models.sh'
+  schedule:
+    - cron: '17 9 * * *'    # ~09:17 UTC nightly. NOTE: GitHub only runs schedules from
+                            # the default branch, so this fires once validate-models.yml
+                            # is on main; the matrix below then covers every vendor branch.
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [main, develop, amd-rocm, intel-b70]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 1
+      - name: Validate ${{ matrix.branch }} model URIs
+        run: |
+          if [ -f scripts/validate_models.sh ]; then
+            bash scripts/validate_models.sh
+          else
+            echo "::notice title=skip::scripts/validate_models.sh not present on '${{ matrix.branch }}' yet — propagate it to enable validation here."
+          fi

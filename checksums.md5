@@ -9,4 +9,5 @@ dd384182945454d28f632596d76d99bd  ./scripts/lib/env_write.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 2535550c40899fef052dde0776266597  ./scripts/lib/vllm_model_select.sh
 bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
+794fc89b54ad787f077f943db6de7dfb  ./scripts/validate_models.sh
 fd2e132d6ac4c87fd89833456a7cd087  ./setup.sh
