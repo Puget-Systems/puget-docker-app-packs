@@ -845,8 +845,11 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     # left containers with no /dev/kfd → "Failed to infer device type" on AMD. docker compose
     # reads COMPOSE_FILE from .env; relative paths resolve against the pack dir it runs from.
     # GPU-agnostic packs (e.g. docker-base) and unknown GPUs have no override → base only.
-    if [ -n "${GPU_VENDOR:-}" ] && [ -f "$INSTALL_DIR/docker-compose.${GPU_VENDOR}.yml" ]; then
-        write_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.${GPU_VENDOR}.yml" "$INSTALL_DIR/.env"
+    # NOTE: cwd is already "$INSTALL_DIR" (we cd'd above) and INSTALL_DIR may be RELATIVE
+    # (e.g. "team_llm"), so reference the override + .env relative to cwd — prepending
+    # "$INSTALL_DIR/" here would double the path ("team_llm/team_llm/...") and silently skip.
+    if [ -n "${GPU_VENDOR:-}" ] && [ -f "docker-compose.${GPU_VENDOR}.yml" ]; then
+        write_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.${GPU_VENDOR}.yml" ".env"
         export COMPOSE_FILE="docker-compose.yml:docker-compose.${GPU_VENDOR}.yml"
         echo -e "${BLUE}GPU profile: ${GPU_VENDOR} (compose override: docker-compose.${GPU_VENDOR}.yml)${NC}"
     fi
