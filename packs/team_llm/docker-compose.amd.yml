@@ -1,0 +1,15 @@
+# AMD ROCm GPU access for team_llm — layered over docker-compose.yml by install.sh.
+# AMD has no default container runtime, so the ROCm vLLM image needs the kfd + render
+# nodes explicitly or it can't see the GPU ("Failed to infer device type").
+services:
+  inference:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      # AMD/PCIe: disable peer-to-peer so the RCCL all-reduce path doesn't hang.
+      - NCCL_P2P_DISABLE=1

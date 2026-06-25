@@ -1,0 +1,11 @@
+# NVIDIA GPU access for comfy_ui — layered over docker-compose.yml by install.sh.
+# Builds the default CUDA Dockerfile (base) and reserves the GPU via the nvidia runtime.
+services:
+  app:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

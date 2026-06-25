@@ -1,0 +1,11 @@
+# NVIDIA GPU access for team_llm — layered over docker-compose.yml by install.sh.
+# Uses the nvidia container runtime via compose's device reservation.
+services:
+  inference:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

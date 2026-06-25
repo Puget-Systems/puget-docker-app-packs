@@ -823,6 +823,16 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     echo -e "${BLUE}Building and starting container in background...${NC}"
     cd "$INSTALL_DIR"
 
+    # Layer the per-vendor GPU compose override (device mounts / runtime / vendor Dockerfile)
+    # over the GPU-agnostic base, so every `docker compose` call below (down/build/up/exec)
+    # targets the detected GPU. docker compose reads COMPOSE_FILE for all subcommands.
+    # GPU-agnostic packs (e.g. docker-base) and unknown GPUs have no override → base only.
+    if [ -n "${GPU_VENDOR:-}" ] && [ -f "$INSTALL_DIR/docker-compose.${GPU_VENDOR}.yml" ]; then
+        # Absolute paths so COMPOSE_FILE survives any later `cd` in this script.
+        export COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml:$INSTALL_DIR/docker-compose.${GPU_VENDOR}.yml"
+        echo -e "${BLUE}GPU profile: ${GPU_VENDOR} (compose override: docker-compose.${GPU_VENDOR}.yml)${NC}"
+    fi
+
     # Validate .env before launch — catch stacking/corruption early
     if ! validate_env ".env"; then
         echo -e "${RED}Fix .env issues before launching.${NC}"

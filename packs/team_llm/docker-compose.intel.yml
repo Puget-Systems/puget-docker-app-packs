@@ -1,0 +1,6 @@
+# Intel XPU GPU access for team_llm — layered over docker-compose.yml by install.sh.
+# The Intel LLM-Scaler image reaches the GPU through the render node.
+services:
+  inference:
+    devices:
+      - /dev/dri:/dev/dri

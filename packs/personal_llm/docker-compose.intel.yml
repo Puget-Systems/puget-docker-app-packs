@@ -1,0 +1,7 @@
+# Intel XPU GPU access for personal_llm — layered over docker-compose.yml by install.sh.
+# Intel uses the IPEX-LLM Ollama image (different from ollama/ollama) and the render node.
+services:
+  inference:
+    image: intelanalytics/ipex-llm-inference-cpp-xpu:latest
+    devices:
+      - /dev/dri:/dev/dri
