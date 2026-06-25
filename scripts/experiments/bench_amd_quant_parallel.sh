@@ -27,7 +27,11 @@ MODEL="${3:?model required}"
 EXTRA="${4:-}"
 PORT="${PORT:-8001}"; MAXCTX="${MAXCTX:-65536}"; UTIL="${UTIL:-0.85}"
 NAME="bench_${LABEL}"
-HF_ENDPOINT="${HF_ENDPOINT:-http://172.19.168.179:8090}"
+# Default to the real hub (public models download anonymously). The Olah mirror rate-limits
+# anonymous repo-visibility HEADs → 401s; set HF_ENDPOINT explicitly only if you have a valid
+# token. For already-cached models, pass HF_HUB_OFFLINE=1 to skip the network check entirely.
+HF_ENDPOINT="${HF_ENDPOINT:-https://huggingface.co}"
+HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-0}"
 
 docker rm -f "$NAME" >/dev/null 2>&1
 echo "[$LABEL] starting"
@@ -39,7 +43,7 @@ docker run -d --name "$NAME" \
   --device /dev/kfd --device /dev/dri --security-opt seccomp=unconfined --ipc=host \
   --group-add video --group-add render \
   -p "$PORT:8000" -v team_llm_vllm_cache:/root/.cache/huggingface \
-  -e HF_ENDPOINT="$HF_ENDPOINT" -e HF_TOKEN="${HF_TOKEN:-}" -e NCCL_P2P_DISABLE=1 \
+  -e HF_ENDPOINT="$HF_ENDPOINT" -e HF_TOKEN="${HF_TOKEN:-}" -e HF_HUB_OFFLINE="$HF_HUB_OFFLINE" -e NCCL_P2P_DISABLE=1 \
   --entrypoint bash "$IMAGE" -c \
   "python3 -m vllm.entrypoints.openai.api_server --model $MODEL --max-model-len $MAXCTX \
    --gpu-memory-utilization $UTIL --enforce-eager --trust-remote-code --disable-custom-all-reduce $EXTRA" \
