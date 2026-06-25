@@ -1,0 +1,9 @@
+# AMD ROCm GPU access for personal_llm (Ollama) — layered over docker-compose.yml.
+# Ollama's ROCm backend needs the kfd + render nodes (no default runtime on AMD).
+services:
+  inference:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp:unconfined

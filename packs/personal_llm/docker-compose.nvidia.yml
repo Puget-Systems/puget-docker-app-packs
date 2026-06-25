@@ -1,0 +1,10 @@
+# NVIDIA GPU access for personal_llm (Ollama) — layered over docker-compose.yml.
+services:
+  inference:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

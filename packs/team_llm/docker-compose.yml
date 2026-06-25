@@ -1,36 +1,35 @@
 services:
   # 1. Inference Engine (vLLM)
   inference:
-    # Standard upstream image (used for all models except Gemma 4).
-    # For Gemma 4: run `docker compose build inference` once to produce
-    # puget-vllm-gemma4:latest using Dockerfile.gemma4, then set
-    # VLLM_IMAGE=puget-vllm-gemma4:latest in .env.
+    # GPU-agnostic BASE. GPU access is added by a per-vendor override that install.sh
+    # layers on: docker compose -f docker-compose.yml -f docker-compose.<vendor>.yml
+    #   nvidia → deploy.resources (nvidia runtime)   amd → /dev/kfd+/dev/dri   intel → /dev/dri
+    #
+    # The vLLM image is PULLED, not built — NVIDIA: vllm/vllm-openai, AMD: rocm/vllm,
+    # Intel: puget-vllm-xpu (built by install.sh under a DISTINCT tag) — selected via
+    # VLLM_IMAGE in .env. Do NOT add a `build:` block here: docker compose tags a build's
+    # output with the service's `image:` name, so `smart_build`/`docker compose build`
+    # would CLOBBER the pulled image (e.g. a CUDA Dockerfile overwriting the ROCm image →
+    # "Failed to infer device type"). Build any derived image under its own tag and point
+    # VLLM_IMAGE at it.
     image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.20.2}
-    build:
-      context: .
-      dockerfile: Dockerfile.gemma4
-      args:
-        VLLM_BASE_IMAGE: vllm/vllm-openai:v0.20.2
-      # Only invoked when you explicitly run `docker compose build inference`.
-      # Normal `docker compose up` skips the build if the image already exists.
     container_name: puget_vllm
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     ports:
       - "8000:8000"
     environment:
-      # Optional: Route model downloads through Squid cache proxy
+      # Optional: route model downloads through a Squid cache proxy (auto-detected by
+      # install.sh on the Puget LAN; empty otherwise).
       - HTTPS_PROXY=${CACHE_PROXY:-}
       - HTTP_PROXY=${CACHE_PROXY:-}
-      - NO_PROXY=localhost,127.0.0.1,0.0.0.0
-      - no_proxy=localhost,127.0.0.1,0.0.0.0
+      # NO_PROXY is written by install.sh (it appends the HF-mirror host so weights
+      # stream straight from the mirror, not through the proxy).
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,0.0.0.0}
+      - no_proxy=${NO_PROXY:-localhost,127.0.0.1,0.0.0.0}
       - HF_HOME=/root/.cache/huggingface
+      # HF mirror (Olah): set HF_ENDPOINT in .env to pull weights from a local mirror.
+      # Defaults to the real hub — must NOT be empty (an empty endpoint breaks downloads).
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
     volumes:
       - vllm_cache:/root/.cache/huggingface
     ipc: host
@@ -38,7 +37,7 @@ services:
     command:
       - >
         exec python3 -m vllm.entrypoints.openai.api_server
-        --model=${MODEL_ID:-cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit}
+        --model=${MODEL_ID:-Qwen/Qwen3-8B}
         --tensor-parallel-size=${GPU_COUNT:-1}
         ${MAX_CONTEXT:+--max-model-len=${MAX_CONTEXT}}
         --gpu-memory-utilization=${GPU_MEMORY_UTILIZATION:-0.90}

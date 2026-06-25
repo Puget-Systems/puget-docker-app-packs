@@ -102,6 +102,35 @@ select_ollama_model() {
     return 0
 }
 
+# recommend_ollama_context — pick a memory-safe context window for the selected model.
+#
+# A flat OLLAMA_NUM_CTX (e.g. 32K) is fine for small models but the KV cache of a large
+# model scales with its layer count, and on a memory-constrained or unified-memory host a
+# too-large context OOM-kills the Ollama runner. Llama 4 Scout (109B MoE, ~63 GB weights)
+# is the clearest case: 32K crashes on a 128 GB unified box, 8K runs fine. Rather than
+# hardcode per-model values, scale the context to the headroom left after the weights, and
+# enable flash-attention + a q8 KV cache (~half the KV memory). Calibrated so Scout lands
+# near 8K when it nearly fills the pool; small models with headroom still get the full 32K.
+#
+#   In:  TOTAL_VRAM, OLLAMA_MODEL_VRAM_GB
+#   Out: OLLAMA_NUM_CTX, OLLAMA_FLASH_ATTENTION, OLLAMA_KV_CACHE_TYPE
+recommend_ollama_context() {
+    local weight="${OLLAMA_MODEL_VRAM_GB:-1}"
+    [ "${weight:-0}" -lt 1 ] 2>/dev/null && weight=1
+    local total="${TOTAL_VRAM:-0}"
+    local headroom=$(( total - weight ))
+    [ "$headroom" -lt 1 ] && headroom=1
+
+    local ctx=$(( 8192 * headroom / weight ))
+    [ "$ctx" -gt 32768 ] && ctx=32768      # cap at the previous default
+    [ "$ctx" -lt 2048 ]  && ctx=2048       # floor so the model is still usable
+    ctx=$(( (ctx / 1024) * 1024 ))         # round down to a clean 1K boundary
+
+    OLLAMA_NUM_CTX="$ctx"
+    OLLAMA_FLASH_ATTENTION=1
+    OLLAMA_KV_CACHE_TYPE="q8_0"
+}
+
 # wait_for_ollama [timeout_secs]
 #   Polls `docker compose exec -T inference ollama list` until it succeeds.
 #   Returns: 0 = ready, 1 = timed out
