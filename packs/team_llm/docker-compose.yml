@@ -30,6 +30,11 @@ services:
       # HF mirror (Olah): set HF_ENDPOINT in .env to pull weights from a local mirror.
       # Defaults to the real hub — must NOT be empty (an empty endpoint breaks downloads).
       - HF_ENDPOINT=${HF_ENDPOINT:-https://huggingface.co}
+      # HF token (optional, read-only recommended): a token makes the mirror's per-request
+      # repo-visibility HEAD to HF authenticated, dodging HF's aggressive rate-limit on
+      # ANONYMOUS metadata calls (the intermittent 401/"repo not found" via Olah). Empty =
+      # anonymous (fine for fully-cached models, or when the mirror runs offline=true).
+      - HF_TOKEN=${HF_TOKEN:-}
     volumes:
       - vllm_cache:/root/.cache/huggingface
     ipc: host
