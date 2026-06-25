@@ -7,7 +7,10 @@ fe9ab9f8514dccab6fe6b4d6966a2480  ./scripts/lib/env_write.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
 4605d0cc23f6ed6a22d5a27d14840f8d  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
-7ee84743158864b7f3f883ba2db2e1f4  ./scripts/lib/vllm_model_select.sh
+2535550c40899fef052dde0776266597  ./scripts/lib/vllm_menu_amd.sh
+2b0c585a10ba72c90a9274ada05cde07  ./scripts/lib/vllm_menu_intel.sh
+7ee84743158864b7f3f883ba2db2e1f4  ./scripts/lib/vllm_menu_nvidia.sh
+a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh
 bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
 794fc89b54ad787f077f943db6de7dfb  ./scripts/validate_models.sh
 fd2e132d6ac4c87fd89833456a7cd087  ./setup.sh
