@@ -19,8 +19,10 @@ services:
       # Optional: Route model downloads through Squid cache proxy
       - HTTPS_PROXY=${CACHE_PROXY:-}
       - HTTP_PROXY=${CACHE_PROXY:-}
-      - NO_PROXY=localhost,127.0.0.1,0.0.0.0
-      - no_proxy=localhost,127.0.0.1,0.0.0.0
+      # NO_PROXY is written by install.sh (it appends the HF-mirror host so weights
+      # stream straight from the mirror, not through the proxy).
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,0.0.0.0}
+      - no_proxy=${NO_PROXY:-localhost,127.0.0.1,0.0.0.0}
       - HF_HOME=/root/.cache/huggingface
       # HF mirror (Olah): set HF_ENDPOINT in .env to pull weights from a local mirror.
       # Defaults to the real hub — must NOT be empty (an empty endpoint breaks downloads).
