@@ -14,36 +14,36 @@ show_vllm_model_menu() {
     echo "  1) Qwen 3.6 (35B MoE FP16)    - Unquantized agentic, 128K ctx (~70 GB) [New]"
 
     if [ "$TOTAL_VRAM" -ge 18 ]; then
-        echo "  2) Qwen 3.6 (27B Dense GPTQ)  - Multimodal agentic, 262K ctx (~18 GB) [New]"
+        echo "  2) Qwen 3.6 (27B Dense AWQ)   - Multimodal agentic, 262K ctx (~18 GB) [New]"
     else
-        echo -e "  2) Qwen 3.6 (27B Dense GPTQ)  - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  2) Qwen 3.6 (27B Dense AWQ)   - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
     if [ "$TOTAL_VRAM" -ge 22 ]; then
-        echo "  3) Qwen 3.5 (35B MoE GPTQ)    - 3B active params, 256K ctx (~22 GB)"
+        echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, 256K ctx (~22 GB)"
     else
-        echo -e "  3) Qwen 3.5 (35B MoE GPTQ)    - ${RED}Requires ~22 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  3) Qwen 3.5 (35B MoE AWQ)     - ${RED}Requires ~22 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
     if [ "$TOTAL_VRAM" -ge 80 ]; then
-        echo "  4) Qwen 3.5 (122B MoE GPTQ)   - Flagship, 10B active, 128K ctx (~60 GB) [Recommended]"
+        echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active, 128K ctx (~60 GB) [Recommended]"
     else
-        echo -e "  4) Qwen 3.5 (122B MoE GPTQ)   - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
     if [ "$TOTAL_VRAM" -ge 40 ]; then
-        echo "  5) DeepSeek R1 (70B GPTQ)     - Reasoning specialist (~38 GB)"
+        echo "  5) DeepSeek R1 (70B AWQ)      - Reasoning specialist (~38 GB)"
     else
-        echo -e "  5) DeepSeek R1 (70B GPTQ)     - ${RED}Requires ~40 GB VRAM${NC}"
+        echo -e "  5) DeepSeek R1 (70B AWQ)      - ${RED}Requires ~40 GB VRAM${NC}"
     fi
 
     if [ "$TOTAL_VRAM" -ge 20 ]; then
-        echo "  6) Gemma 4 (26B MoE GPTQ)     - Google MoE Instruct, 3.8B active (~18 GB)"
+        echo "  6) Gemma 4 (26B MoE AWQ)      - Google MoE Instruct, 3.8B active (~18 GB)"
     else
-        echo -e "  6) Gemma 4 (26B MoE GPTQ)     - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  6) Gemma 4 (26B MoE AWQ)      - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo "  7) Llama 4 (8B FP16)          - Standard FP16, baseline (~16 GB)"
+    echo "  7) Llama 3.1 (8B Instruct)    - Standard FP16 dense, ungated (~16 GB)"
 
     echo "  8) Custom                     - Enter a HuggingFace model ID"
     echo "  9) Skip                       - I'll configure via .env later"
@@ -116,26 +116,26 @@ select_vllm_model() {
             ;;
         2)
             if [ "$TOTAL_VRAM" -lt 18 ]; then
-                echo -e "${RED}✗ Qwen 3.6 27B Dense GPTQ requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                echo -e "${RED}✗ Qwen 3.6 27B Dense AWQ requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="cyankiwi/Qwen3.6-27B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=18
+            VLLM_MODEL_ID="cyankiwi/Qwen3.6-27B-AWQ-INT4"; VLLM_MODEL_SIZE_GB=18
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             ;;
         3)
-            VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=22
+            VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             ;;
         4)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
-                echo -e "${RED}✗ Qwen 3.5 122B MoE GPTQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=60
+            VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=60
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
@@ -143,25 +143,26 @@ select_vllm_model() {
             ;;
         5)
             if [ "$TOTAL_VRAM" -lt 40 ]; then
-                echo -e "${RED}✗ DeepSeek R1 70B GPTQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                echo -e "${RED}✗ DeepSeek R1 70B AWQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-GPTQ"; VLLM_MODEL_SIZE_GB=38
+            VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_MODEL_SIZE_GB=38
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
             ;;
         6)
             if [ "$TOTAL_VRAM" -lt 20 ]; then
-                echo -e "${RED}✗ Gemma 4 26B MoE GPTQ requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                echo -e "${RED}✗ Gemma 4 26B MoE AWQ requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-GPTQ-Int4"; VLLM_MODEL_SIZE_GB=18
+            VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"; VLLM_MODEL_SIZE_GB=18
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             ;;
         7)
-            VLLM_MODEL_ID="meta-llama/Meta-Llama-4-8B-Instruct"; VLLM_MODEL_SIZE_GB=16
-            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser llama4_json"
+            # Ungated unsloth mirror — meta-llama/* is gated (403) and Llama-4 has no 8B.
+            VLLM_MODEL_ID="unsloth/Meta-Llama-3.1-8B-Instruct"; VLLM_MODEL_SIZE_GB=16
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser llama3_json"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             ;;
         8)
@@ -205,7 +206,8 @@ select_vllm_model() {
             ;;
         13)
             # Benchmark-only: Llama 3.1 8B FP16 forced to single GPU (TP=1)
-            VLLM_MODEL_ID="meta-llama/Llama-3.1-8B-Instruct"; VLLM_MODEL_SIZE_GB=16
+            # Ungated unsloth mirror (meta-llama/* is gated → 403 without a grant).
+            VLLM_MODEL_ID="unsloth/Meta-Llama-3.1-8B-Instruct"; VLLM_MODEL_SIZE_GB=16
             VLLM_GPU_COUNT=1
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser llama3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
