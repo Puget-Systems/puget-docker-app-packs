@@ -78,4 +78,9 @@ d=json.loads(body); n=d['usage']['completion_tokens']
 print(f'[$LABEL] RESULT: {n} tokens in {t:.2f}s = {n/t:.1f} tok/s   (load ${load}s)')
 " || { echo "[$LABEL] could not parse response:"; echo "$RESP" | head -c 400; }
 
-docker rm -f "$NAME" >/dev/null 2>&1
+# KEEP=1 leaves the server running for manual testing instead of tearing it down.
+if [ "${KEEP:-0}" = 1 ]; then
+    echo "[$LABEL] LEFT RUNNING as container '$NAME' → http://localhost:$PORT/v1 (model: $MODEL)"
+else
+    docker rm -f "$NAME" >/dev/null 2>&1
+fi
