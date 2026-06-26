@@ -139,6 +139,9 @@ echo ""
 # Check for GPU Drivers and Runtimes
 detect_gpus || true
 
+# Engine label for user-facing messages — AMD team_llm runs llama.cpp, others run vLLM.
+infer_engine_label() { [ "${GPU_VENDOR:-}" = "amd" ] && echo "llama.cpp" || echo "vLLM"; }
+
 if [ "$GPU_VENDOR" == "amd" ]; then
     echo -e "${GREEN}✓ AMD GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
     echo -e "${BLUE}Checking AMD ROCm / amdgpu access...${NC}"
@@ -743,8 +746,8 @@ case $FLAVOR in
         fi
         ;;
     team_llm)
-        echo -e "${GREEN}Team LLM (vLLM + Open WebUI)${NC}"
-        echo "Production inference with multi-GPU tensor parallelism."
+        echo -e "${GREEN}Team LLM ($(infer_engine_label) + Open WebUI)${NC}"
+        echo "Production multi-GPU inference."
         echo ""
         # Cache Proxy Configuration (optional)
         prompt_env_proxy "$INSTALL_DIR/.env" || true
@@ -946,7 +949,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 ;;
             team_llm)
                 LOCAL_IP=$(hostname -I | awk '{print $1}')
-                echo -e "\n${GREEN}vLLM server is starting...${NC}"
+                echo -e "\n${GREEN}$(infer_engine_label) server is starting...${NC}"
                 echo -e "  Chat UI:  ${BLUE}http://localhost:3000${NC}"
                 echo -e "  API:      ${BLUE}http://localhost:8000/v1${NC}"
                 echo -e "  Network:  ${BLUE}http://${LOCAL_IP}:3000${NC}"
