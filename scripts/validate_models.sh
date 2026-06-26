@@ -27,9 +27,14 @@ source "$REPO_ROOT/scripts/lib/ollama_model_select.sh" 2>/dev/null || true
 fail=0
 
 # --- HuggingFace repo (vLLM + ComfyUI) -----------------------------------------------
-hf_status() {  # repo-id -> prints HTTP code
-    curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-        "https://huggingface.co/$1/resolve/main/config.json"
+hf_status() {  # repo-id (or GGUF repo:quant) -> prints HTTP code
+    local repo="${1%%:*}"   # strip any ":QUANT" GGUF suffix
+    if [ "$repo" != "$1" ] || [[ "$repo" == *GGUF* ]]; then
+        # GGUF repo: no config.json — verify the repo itself exists via the models API.
+        curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://huggingface.co/api/models/$repo"
+    else
+        curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://huggingface.co/$repo/resolve/main/config.json"
+    fi
 }
 check_hf() {  # label repo-id
     local code; code=$(hf_status "$2")
