@@ -18,6 +18,7 @@ source "$INSTALLER_DIR/scripts/lib/smart_build.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_monitor.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_model_select.sh"
 source "$INSTALLER_DIR/scripts/lib/ollama_model_select.sh"
+source "$INSTALLER_DIR/scripts/lib/llama_menu_amd.sh"
 source "$INSTALLER_DIR/scripts/lib/env_write.sh"
 
 echo -e "${BLUE}============================================================${NC}"
@@ -728,7 +729,12 @@ case $FLAVOR in
         echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to reconfigure."
         ;;
     personal_llm)
-        echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
+        # AMD Personal runs llama.cpp (OpenAI API), every other vendor runs Ollama.
+        if [ "${GPU_VENDOR:-}" = "amd" ]; then
+            echo -e "${GREEN}Personal LLM (llama.cpp + Open WebUI)${NC}"
+        else
+            echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
+        fi
         echo ""
         # Cache Proxy Configuration (optional)
         prompt_env_proxy "$INSTALL_DIR/.env" || true
@@ -745,6 +751,29 @@ case $FLAVOR in
             TOTAL_VRAM=0
             VRAM_GB=0
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
+        fi
+
+        # llama.cpp needs MODEL_ID in .env BEFORE launch (it downloads via -hf at startup),
+        # unlike Ollama which pulls into the running container. So select + write env here,
+        # pre-launch; the AMD compose override reads MODEL_ID/MAX_CONTEXT/LLAMA_PARALLEL.
+        if [ "${GPU_VENDOR:-}" = "amd" ]; then
+            echo ""
+            echo -e "${YELLOW}Select a model:${NC}"
+            echo ""
+            show_llama_model_menu
+            echo ""
+            read -p "Select [1-${MENU_MAX}]: " LL_CHOICE
+            LL_RC=0
+            select_llama_model "$LL_CHOICE" || LL_RC=$?
+            if [ "$LL_RC" -eq 0 ] && [ -n "${LLAMA_MODEL_ID:-}" ]; then
+                write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" "$INSTALL_DIR/.env"
+                write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" "$INSTALL_DIR/.env"
+                write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-2}" "$INSTALL_DIR/.env"
+                write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" "$INSTALL_DIR/.env"
+                echo -e "${GREEN}  ✓ ${LLAMA_MODEL_ID} (ctx ${LLAMA_MAX_CTX}, ${LLAMA_PARALLEL:-2} slots) → .env${NC}"
+            else
+                echo -e "${YELLOW}  No model selected — set MODEL_ID in .env before launch.${NC}"
+            fi
         fi
         ;;
     team_llm)
@@ -915,38 +944,47 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 echo -e "  Local:   ${BLUE}http://localhost:3000${NC}"
                 echo -e "  Network: ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
-                echo "Select a starter model to download:"
-                echo ""
-                show_ollama_model_menu
-                echo ""
-                read -p "Select a model [1-${MENU_MAX}]: " MODEL_SELECT
-
-                MODEL_TAG=""
-                OLLAMA_SELECT_RC=0
-                select_ollama_model "$MODEL_SELECT" || OLLAMA_SELECT_RC=$?
-
-                if [ $OLLAMA_SELECT_RC -eq 0 ]; then
-                    MODEL_TAG="$OLLAMA_MODEL_TAG"
-                elif [ $OLLAMA_SELECT_RC -eq 1 ]; then
-                    # VRAM insufficient — message already printed
-                    MODEL_TAG=""
+                # AMD = llama.cpp: the model was set in .env pre-launch and downloads via
+                # -hf at container start. No `ollama pull` (no ollama in the image). Just
+                # wait for the OpenAI server to come up.
+                if [ "${GPU_VENDOR:-}" = "amd" ]; then
+                    echo -e "${BLUE}llama.cpp is downloading the model and starting (5–30 min)...${NC}"
+                    wait_for_vllm "puget_ollama" "${LLAMA_MODEL_SIZE_GB:-0}" || true
+                    echo -e "  When ready, pick the model from the dropdown at ${BLUE}http://localhost:3000${NC}"
                 else
-                    echo "Skipping model download."
+                    echo "Select a starter model to download:"
+                    echo ""
+                    show_ollama_model_menu
+                    echo ""
+                    read -p "Select a model [1-${MENU_MAX}]: " MODEL_SELECT
+
                     MODEL_TAG=""
-                fi
+                    OLLAMA_SELECT_RC=0
+                    select_ollama_model "$MODEL_SELECT" || OLLAMA_SELECT_RC=$?
 
-                if [[ -n "$MODEL_TAG" ]]; then
-                     if ! wait_for_ollama; then
-                         MODEL_TAG=""
-                     fi
-                fi
+                    if [ $OLLAMA_SELECT_RC -eq 0 ]; then
+                        MODEL_TAG="$OLLAMA_MODEL_TAG"
+                    elif [ $OLLAMA_SELECT_RC -eq 1 ]; then
+                        # VRAM insufficient — message already printed
+                        MODEL_TAG=""
+                    else
+                        echo "Skipping model download."
+                        MODEL_TAG=""
+                    fi
 
-                if [[ -n "$MODEL_TAG" ]]; then
-                     echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
-                     docker compose exec -T inference ollama pull "$MODEL_TAG"
-                     echo -e "${GREEN}✓ Model ready.${NC}"
-                else
-                     echo -e "Run ${BLUE}./init.sh${NC} later to download models."
+                    if [[ -n "$MODEL_TAG" ]]; then
+                         if ! wait_for_ollama; then
+                             MODEL_TAG=""
+                         fi
+                    fi
+
+                    if [[ -n "$MODEL_TAG" ]]; then
+                         echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
+                         docker compose exec -T inference ollama pull "$MODEL_TAG"
+                         echo -e "${GREEN}✓ Model ready.${NC}"
+                    else
+                         echo -e "Run ${BLUE}./init.sh${NC} later to download models."
+                    fi
                 fi
                 ;;
             team_llm)

@@ -1,9 +1,65 @@
-# AMD ROCm GPU access for personal_llm (Ollama) — layered over docker-compose.yml.
-# Ollama's ROCm backend needs the kfd + render nodes (no default runtime on AMD).
+# AMD ROCm Personal LLM — runs llama.cpp (llama-server), NOT Ollama.
+# llama.cpp's HIP split (--split-mode row) runs both R9700s per token with no RCCL — ~2x
+# Ollama's layer-split path — and serves an OpenAI-compatible API on :8000. This override
+# replaces the engine (image + entrypoint + command + port) and repoints the UI/brain from
+# the Ollama API (:11434) to the OpenAI API (:8000). Team LLM stays on vLLM.
+# MODEL_ID / MAX_CONTEXT / LLAMA_PARALLEL / LLAMA_IMAGE come from .env (written by init.sh).
 services:
   inference:
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-rocm}
+    entrypoint: ["/app/llama-server"]
+    command:
+      - "-hf"
+      - "${MODEL_ID:-unsloth/Qwen3.6-27B-GGUF:Q4_K_M}"
+      - "-ngl"
+      - "99"
+      - "--split-mode"
+      - "row"
+      - "-fa"
+      - "on"
+      # Concurrency slots — fixed at launch, each gets (-c / N). Default 2 so a chat stream
+      # and a background request (UI title-gen, a second tab) never contend for one slot.
+      - "--parallel"
+      - "${LLAMA_PARALLEL:-2}"
+      - "-c"
+      - "${MAX_CONTEXT:-32768}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--jinja"
+    ports:
+      - "8000:8000"
+    environment:
+      # llama.cpp's -hf downloader 404s through the Olah mirror (get_repo_commit), so force
+      # DIRECT HuggingFace for GGUF — overrides any auto-detected HF_ENDPOINT in .env.
+      - HF_ENDPOINT=https://huggingface.co
+      - LLAMA_CACHE=/root/.cache/huggingface
+    volumes:
+      - ollama_data:/root/.cache/huggingface
     devices:
       - /dev/kfd
       - /dev/dri
     security_opt:
       - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    group_add:
+      - video
+      - render
+
+  # Repoint Open WebUI from the Ollama API to llama-server's OpenAI-compatible API.
+  ui:
+    environment:
+      - OPENAI_API_BASE_URL=http://inference:8000/v1
+      - OPENAI_API_KEY=not-needed
+      - ENABLE_OLLAMA_API=false
+      - OLLAMA_BASE_URL=
+      - WEBUI_AUTH=false
+
+  # Brain (optional/advanced) assumes the Ollama API; point it at the OpenAI base so it at
+  # least resolves the right host. Swarm features that call Ollama-native endpoints won't
+  # apply under llama.cpp.
+  brain:
+    environment:
+      - OLLAMA_HOST=http://inference:8000
