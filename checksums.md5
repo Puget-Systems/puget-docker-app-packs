@@ -11,6 +11,6 @@ bb55f71af4ed7c47a495cdc107ef8126  ./scripts/lib/vllm_menu_amd.sh
 2b0c585a10ba72c90a9274ada05cde07  ./scripts/lib/vllm_menu_intel.sh
 7ee84743158864b7f3f883ba2db2e1f4  ./scripts/lib/vllm_menu_nvidia.sh
 a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh
-bc5d1981202b82bdaaa052f4858ffc28  ./scripts/lib/vllm_monitor.sh
+2665ce080bc52fde25458e00216c8ad7  ./scripts/lib/vllm_monitor.sh
 2fca3f93015a16fe36c2e2e5e24b2c97  ./scripts/validate_models.sh
 fd2e132d6ac4c87fd89833456a7cd087  ./setup.sh
