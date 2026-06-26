@@ -18,7 +18,15 @@ services:
       - "--split-mode"
       - "row"
       - "-c"
-      - "${MAX_CONTEXT:-16384}"
+      - "${MAX_CONTEXT:-32768}"
+      # Flash attention + q8 KV cache ≈ halve KV memory, so MAX_CONTEXT (sized to free VRAM
+      # by recommend_llama_context) fits — mirrors the ollama pack's FA + q8 KV approach.
+      - "-fa"
+      - "on"
+      - "--cache-type-k"
+      - "q8_0"
+      - "--cache-type-v"
+      - "q8_0"
       - "--host"
       - "0.0.0.0"
       - "--port"
