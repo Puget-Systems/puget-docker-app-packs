@@ -13,10 +13,15 @@ services:
       - "${MODEL_ID:-unsloth/Qwen3.6-27B-GGUF:Q4_K_M}"
       - "-ngl"
       - "99"
+      # GPU split. NEVER "row": cross-GPU row-split SEGFAULTS under concurrent batched decode
+      # on RDNA4 ROCm (2 simultaneous requests GP-fault it — crashes Hobbes's chat+summarizer).
+      # init.sh picks "none" (single GPU, fastest) when the model fits one card, else "layer".
       - "--split-mode"
-      - "row"
+      - "${LLAMA_SPLIT_MODE:-layer}"
       - "-fa"
       - "on"
+      # Vision (mmproj) is left ENABLED — verified harmless under concurrency; only row-split
+      # crashes. Multimodal GGUFs (e.g. Qwen3.6-27B) get image input in Open WebUI for free.
       # Concurrency slots — fixed at launch, each gets (-c / N). Default 2 so a chat stream
       # and a background request (UI title-gen, a second tab) never contend for one slot.
       - "--parallel"
@@ -30,6 +35,13 @@ services:
       - "--jinja"
     ports:
       - "8000:8000"
+    # Override the image's default healthcheck (which probes :8080) — llama-server is on :8000.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 1800s
     environment:
       # llama.cpp's -hf downloader 404s through the Olah mirror (get_repo_commit), so force
       # DIRECT HuggingFace for GGUF — overrides any auto-detected HF_ENDPOINT in .env.

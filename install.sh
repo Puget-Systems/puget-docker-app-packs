@@ -769,8 +769,9 @@ case $FLAVOR in
                 write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" "$INSTALL_DIR/.env"
                 write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" "$INSTALL_DIR/.env"
                 write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-2}" "$INSTALL_DIR/.env"
+                write_env_var "LLAMA_SPLIT_MODE" "${LLAMA_SPLIT_MODE:-layer}" "$INSTALL_DIR/.env"
                 write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" "$INSTALL_DIR/.env"
-                echo -e "${GREEN}  ✓ ${LLAMA_MODEL_ID} (ctx ${LLAMA_MAX_CTX}, ${LLAMA_PARALLEL:-2} slots) → .env${NC}"
+                echo -e "${GREEN}  ✓ ${LLAMA_MODEL_ID} (ctx ${LLAMA_MAX_CTX}, ${LLAMA_PARALLEL:-2} slots, split=${LLAMA_SPLIT_MODE:-layer}) → .env${NC}"
             else
                 echo -e "${YELLOW}  No model selected — set MODEL_ID in .env before launch.${NC}"
             fi

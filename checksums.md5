@@ -1,11 +1,11 @@
-4cbbe135ed454d753acc89edc885c7b4  ./install.sh
+7b061baa0012082155edb1b69f13366e  ./install.sh
 c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
-c759f2c74a3ad2c7751669236d37fdf4  ./packs/personal_llm/init.sh
+1ec287c6d93a0c1c4c8a2293e838d51a  ./packs/personal_llm/init.sh
 6d61c414912b1c5a3dd32201dd553fe5  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
 025ba28ecd53a7c95202a5ad197121f3  ./scripts/lib/env_write.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
-042b29ee1a369cccd3519b1b0184e843  ./scripts/lib/llama_menu_amd.sh
+257547863c58af7b8b9c7ec4fec9dc10  ./scripts/lib/llama_menu_amd.sh
 4605d0cc23f6ed6a22d5a27d14840f8d  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 2535550c40899fef052dde0776266597  ./scripts/lib/vllm_menu_amd.sh

@@ -86,9 +86,11 @@ if [ "${GPU_VENDOR:-}" = "amd" ]; then
     write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" ".env"
     write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" ".env"
     write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-2}" ".env"
+    write_env_var "LLAMA_SPLIT_MODE" "${LLAMA_SPLIT_MODE:-layer}" ".env"
     write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" ".env"
     echo -e "  Model:   ${LLAMA_MODEL_ID}"
     echo -e "  Context: ${LLAMA_MAX_CTX} (${LLAMA_PARALLEL:-2} slots → $((LLAMA_MAX_CTX / ${LLAMA_PARALLEL:-2})) per request)"
+    echo -e "  GPUs:    split=${LLAMA_SPLIT_MODE:-layer} ($([ "${LLAMA_SPLIT_MODE:-layer}" = none ] && echo "single GPU, fastest" || echo "both GPUs"))"
 
     # Recreate the inference container so llama-server restarts with the new model/context.
     docker compose up -d

@@ -52,17 +52,18 @@ show_llama_model_menu() {
     MENU_MAX=9
 }
 
-# recommend_llama_context <weights_gb>
-#   Scale -c to the VRAM left after weights, rather than a flat default. KV cache stays at
-#   fp16 (a q8 KV cache degrades long-context attention and makes tool-use loop); flash
-#   attention shrinks the compute buffer. fp16 KV for a Qwen3-class GQA model is ~0.25 GB /
-#   1k tokens → ~3000 tokens/GB of headroom (conservative, reserving 4 GB for buffers).
-#   This sizes the TOTAL pool; with --parallel N each slot gets (-c / N). Cap 131072, floor 8k.
-#   In: TOTAL_VRAM   Out: echoes the context length.
+# recommend_llama_context <weights_gb> [avail_vram_gb]
+#   Scale -c to the VRAM left after weights. KV stays fp16 (q8 KV degrades long-context
+#   attention → tool-loops); flash attention shrinks the compute buffer. fp16 KV for a
+#   Qwen3-class GQA model is ~0.25 GB / 1k tokens → ~3000 tokens/GB of headroom (reserving
+#   4 GB for buffers). avail_vram defaults to TOTAL_VRAM (layer/row = both GPUs); pass a
+#   single GPU's VRAM for --split-mode none. Sizes the TOTAL pool; --parallel N gives each
+#   slot (-c / N). Cap 131072, floor 8k.
 recommend_llama_context() {
     local weight="${1:-1}"
     [ "${weight:-0}" -lt 1 ] 2>/dev/null && weight=1
-    local headroom=$(( ${TOTAL_VRAM:-0} - weight - 4 ))
+    local avail="${2:-${TOTAL_VRAM:-0}}"
+    local headroom=$(( avail - weight - 4 ))
     [ "$headroom" -lt 1 ] && headroom=1
     local ctx=$(( headroom * 3000 ))
     [ "$ctx" -gt 131072 ] && ctx=131072
@@ -112,7 +113,19 @@ select_llama_model() {
             return 2 ;;
     esac
 
-    # Size -c to the VRAM left after weights (fp16 KV; flash-attn enabled in compose).
-    LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB")"
+    # Pick the GPU-split mode. --split-mode ROW (cross-GPU, ~2x) SEGFAULTS under concurrent
+    # batched decode on RDNA4 ROCm — verified: 2 simultaneous requests reliably GP-fault it,
+    # which crashes Hobbes (chat + background summarizer hit it at once). So never use row:
+    #   - model fits on ONE GPU  → --split-mode none (single GPU): fastest AND crash-free.
+    #   - model needs both GPUs  → --split-mode layer (sequential): slower but crash-free.
+    # Reserve ~6 GB on the single card for KV + compute buffers when testing the fit.
+    local single_gpu_cap=$(( ${VRAM_GB:-0} - 6 ))
+    if [ "$LLAMA_MODEL_SIZE_GB" -gt 0 ] && [ "$LLAMA_MODEL_SIZE_GB" -le "$single_gpu_cap" ]; then
+        LLAMA_SPLIT_MODE="none"
+        LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$VRAM_GB")"
+    else
+        LLAMA_SPLIT_MODE="layer"
+        LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$TOTAL_VRAM")"
+    fi
     return 0
 }
