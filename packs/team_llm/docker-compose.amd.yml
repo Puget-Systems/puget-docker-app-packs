@@ -19,14 +19,13 @@ services:
       - "row"
       - "-c"
       - "${MAX_CONTEXT:-32768}"
-      # Flash attention + q8 KV cache ≈ halve KV memory, so MAX_CONTEXT (sized to free VRAM
-      # by recommend_llama_context) fits — mirrors the ollama pack's FA + q8 KV approach.
+      # Flash attention shrinks the attention compute buffer so the large -c (sized to free
+      # VRAM by recommend_llama_context) fits. KV cache is left at fp16 ON PURPOSE: a q8 KV
+      # cache halves memory but degrades attention to earlier tokens as context grows, which
+      # makes agentic/tool-use sessions lose track of prior tool results and re-call in a loop.
+      # On these 32GB+ R9700s fp16 still reaches the 128K cap, so we don't trade quality for it.
       - "-fa"
       - "on"
-      - "--cache-type-k"
-      - "q8_0"
-      - "--cache-type-v"
-      - "q8_0"
       - "--host"
       - "0.0.0.0"
       - "--port"

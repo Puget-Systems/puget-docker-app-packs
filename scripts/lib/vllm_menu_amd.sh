@@ -53,10 +53,11 @@ show_vllm_model_menu() {
 
 # recommend_llama_context <weights_gb>
 #   Same idea as recommend_ollama_context (ollama_model_select.sh): rather than pin a flat
-#   16K/32K, scale -c to the VRAM left after weights and lean on flash-attention + a q8 KV
-#   cache (set in docker-compose.amd.yml) to ~halve KV memory. With q8 KV a Qwen3-class GQA
-#   model costs ~0.12 GB / 1k tokens, so ~5000 tokens/GB of headroom (conservative, leaving
-#   4 GB for compute/graph buffers). Cap at 131072 (Qwen3 native-with-rope ceiling), floor 8k.
+#   16K/32K, scale -c to the VRAM left after weights. We keep the KV cache at fp16 (no q8
+#   quant — it degrades long-context attention and makes tool-use sessions loop), and rely
+#   on flash-attention to shrink the compute buffer. fp16 KV for a Qwen3-class GQA model is
+#   ~0.25 GB / 1k tokens, so ~3000 tokens/GB of headroom (conservative, leaving 4 GB for
+#   compute/graph buffers). Cap at 131072 (Qwen3 native-with-rope ceiling), floor 8k.
 #   A 64 GB box on a 17 GB Q4 27B → 131072 instead of 16384.
 #   In: TOTAL_VRAM   Out: echoes the context length.
 recommend_llama_context() {
@@ -65,7 +66,7 @@ recommend_llama_context() {
     local headroom=$(( ${TOTAL_VRAM:-0} - weight - 4 ))   # reserve ~4 GB for compute buffers
     [ "$headroom" -lt 1 ] && headroom=1
 
-    local ctx=$(( headroom * 5000 ))        # ~5000 tokens / GB with q8 KV cache
+    local ctx=$(( headroom * 3000 ))        # ~3000 tokens / GB with fp16 KV cache
     [ "$ctx" -gt 131072 ] && ctx=131072     # Qwen3 native-with-rope ceiling
     [ "$ctx" -lt 8192 ]   && ctx=8192       # floor so the model is still usable
     ctx=$(( (ctx / 1024) * 1024 ))          # round down to a clean 1K boundary
