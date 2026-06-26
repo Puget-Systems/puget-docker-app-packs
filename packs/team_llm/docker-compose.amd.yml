@@ -26,6 +26,13 @@ services:
       # On these 32GB+ R9700s fp16 still reaches the 128K cap, so we don't trade quality for it.
       - "-fa"
       - "on"
+      # Concurrency slots. llama.cpp can't autoscale like vLLM — --parallel is fixed at
+      # launch and statically splits -c into N slots of (-c / N) each (KV memory is the same
+      # either way, so this is free). Default 2 so a chat stream and a background request
+      # (e.g. a tool-result summarizer or a /v1/models probe) never contend for one slot and
+      # 503/connection-drop each other. 128K pool ÷ 2 = 64K per slot. Raise for more users.
+      - "--parallel"
+      - "${LLAMA_PARALLEL:-2}"
       - "--host"
       - "0.0.0.0"
       - "--port"
