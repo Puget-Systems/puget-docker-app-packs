@@ -25,6 +25,10 @@ services:
       - "8000"
       - "--jinja"
     environment:
+      # llama.cpp's -hf downloader doesn't speak the Olah mirror's API (it 404s on
+      # get_repo_commit), so force DIRECT HuggingFace for GGUF — this overrides the
+      # auto-detected HF_ENDPOINT mirror in .env. Public GGUFs need no token.
+      - HF_ENDPOINT=https://huggingface.co
       # llama.cpp -hf cache → reuse the team_llm vllm_cache volume (/root/.cache/huggingface).
       - LLAMA_CACHE=/root/.cache/huggingface
     devices:

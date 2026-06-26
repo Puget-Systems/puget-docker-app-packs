@@ -25,7 +25,7 @@ wait_for_vllm() {
     while ! $READY; do
         # Check if container is still running
         if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            echo -e "\n${RED}✗ vLLM container exited. Check logs:${NC}"
+            echo -e "\n${RED}✗ Inference server exited. Check logs:${NC}"
             echo -e "  ${BLUE}docker compose logs inference${NC}"
             break
         fi
@@ -43,7 +43,7 @@ wait_for_vllm() {
 
         if [ "$CRASH_DETECTIONS" -ge 2 ]; then
             echo ""
-            echo -e "${RED}✗ vLLM is crash-looping (restarted ${RESTART_COUNT} times).${NC}"
+            echo -e "${RED}✗ Inference server is crash-looping (restarted ${RESTART_COUNT} times).${NC}"
             echo ""
             # Extract the actual error from the logs
             local ERROR_MSG
@@ -94,7 +94,7 @@ wait_for_vllm() {
             CANDIDATE_PHASE="Autotuning kernels"
             CANDIDATE_LEVEL=3
             DETAIL=""
-        elif echo "$LAST_LOG" | grep -q "Loading safetensors\|Loading weights\|Starting to load model"; then
+        elif echo "$LAST_LOG" | grep -qiE "Loading safetensors|Loading weights|Starting to load model|llama_model_loader|load_model|loading model"; then
             local SHARD_PCT
             SHARD_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+% Completed' | tail -1)
             CANDIDATE_PHASE="Loading model weights"
