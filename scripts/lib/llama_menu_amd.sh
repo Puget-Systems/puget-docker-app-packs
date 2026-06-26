@@ -113,19 +113,17 @@ select_llama_model() {
             return 2 ;;
     esac
 
-    # Pick the GPU-split mode. --split-mode ROW (cross-GPU, ~2x) SEGFAULTS under concurrent
-    # batched decode on RDNA4 ROCm — verified: 2 simultaneous requests reliably GP-fault it,
-    # which crashes Hobbes (chat + background summarizer hit it at once). So never use row:
-    #   - model fits on ONE GPU  → --split-mode none (single GPU): fastest AND crash-free.
-    #   - model needs both GPUs  → --split-mode layer (sequential): slower but crash-free.
-    # Reserve ~6 GB on the single card for KV + compute buffers when testing the fit.
-    local single_gpu_cap=$(( ${VRAM_GB:-0} - 6 ))
-    if [ "$LLAMA_MODEL_SIZE_GB" -gt 0 ] && [ "$LLAMA_MODEL_SIZE_GB" -le "$single_gpu_cap" ]; then
-        LLAMA_SPLIT_MODE="none"
-        LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$VRAM_GB")"
-    else
-        LLAMA_SPLIT_MODE="layer"
-        LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$TOTAL_VRAM")"
-    fi
+    # GPU split + concurrency. The catch on RDNA4 ROCm: --split-mode ROW (real cross-GPU
+    # tensor split, ~2x speed, both cards' VRAM) SEGFAULTS under *concurrent* batched decode
+    # — 2 simultaneous requests GP-fault the server. BUT with a SINGLE slot (--parallel 1),
+    # requests queue and run one-at-a-time, so the concurrent decode never happens — verified
+    # stable under 4 simultaneous requests. That keeps row's full speed AND the full both-card
+    # context pool (-c undivided), which is exactly right for a one-at-a-time WebUI workload.
+    # Trade-off: a 2nd simultaneous request WAITS (~8s) instead of running in parallel.
+    # Power users who need true parallel decode can override .env: LLAMA_SPLIT_MODE=layer
+    # (sequential, ~half speed, crash-safe) + LLAMA_PARALLEL=2.
+    LLAMA_SPLIT_MODE="row"
+    LLAMA_PARALLEL="1"
+    LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$TOTAL_VRAM")"
     return 0
 }

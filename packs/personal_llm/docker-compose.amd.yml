@@ -13,19 +13,20 @@ services:
       - "${MODEL_ID:-unsloth/Qwen3.6-27B-GGUF:Q4_K_M}"
       - "-ngl"
       - "99"
-      # GPU split. NEVER "row": cross-GPU row-split SEGFAULTS under concurrent batched decode
-      # on RDNA4 ROCm (2 simultaneous requests GP-fault it — crashes Hobbes's chat+summarizer).
-      # init.sh picks "none" (single GPU, fastest) when the model fits one card, else "layer".
+      # GPU split. Default "row" (real cross-GPU tensor split): ~2x speed AND both cards' VRAM
+      # for context. row SEGFAULTS under CONCURRENT batched decode on RDNA4 ROCm, but the
+      # single slot below (--parallel 1) serializes requests so that never happens — verified
+      # stable under 4 simultaneous requests. For true parallel decode instead of queueing,
+      # override .env: LLAMA_SPLIT_MODE=layer + LLAMA_PARALLEL=2 (sequential, ~half speed).
       - "--split-mode"
-      - "${LLAMA_SPLIT_MODE:-layer}"
+      - "${LLAMA_SPLIT_MODE:-row}"
       - "-fa"
       - "on"
-      # Vision (mmproj) is left ENABLED — verified harmless under concurrency; only row-split
-      # crashes. Multimodal GGUFs (e.g. Qwen3.6-27B) get image input in Open WebUI for free.
-      # Concurrency slots — fixed at launch, each gets (-c / N). Default 2 so a chat stream
-      # and a background request (UI title-gen, a second tab) never contend for one slot.
+      # Vision (mmproj) left ENABLED — verified harmless. Multimodal GGUFs get image input free.
+      # One slot: a 2nd simultaneous request queues (~waits) rather than decoding concurrently
+      # (which is what crashes row-split). -c is undivided → the full context pool per request.
       - "--parallel"
-      - "${LLAMA_PARALLEL:-2}"
+      - "${LLAMA_PARALLEL:-1}"
       - "-c"
       - "${MAX_CONTEXT:-32768}"
       - "--host"
