@@ -139,8 +139,10 @@ echo ""
 # Check for GPU Drivers and Runtimes
 detect_gpus || true
 
-# Engine label for user-facing messages — AMD team_llm runs llama.cpp, others run vLLM.
-infer_engine_label() { [ "${GPU_VENDOR:-}" = "amd" ] && echo "llama.cpp" || echo "vLLM"; }
+# Engine label for user-facing messages. Team LLM runs vLLM on every vendor (AMD uses
+# online FP8 quant — the int4 path has no WNA16 kernel on ROCm). Personal LLM's engine
+# (Ollama, or llama.cpp on AMD) is messaged from its own pack init.
+infer_engine_label() { echo "vLLM"; }
 
 if [ "$GPU_VENDOR" == "amd" ]; then
     echo -e "${GREEN}✓ AMD GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"

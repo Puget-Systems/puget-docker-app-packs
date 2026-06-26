@@ -1,4 +1,4 @@
-443bc106f89fa32e44d8455e90f5384d  ./install.sh
+eef031bcb4347b3e417bf9ca14fa3744  ./install.sh
 c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 2c4eb02bcd3cc17de5c6dad9e0ae07f4  ./packs/personal_llm/init.sh
 6d61c414912b1c5a3dd32201dd553fe5  ./packs/team_llm/init.sh
@@ -7,7 +7,7 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
 4605d0cc23f6ed6a22d5a27d14840f8d  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
-ffbfa237308d1e1a162fa8baed4427ee  ./scripts/lib/vllm_menu_amd.sh
+2535550c40899fef052dde0776266597  ./scripts/lib/vllm_menu_amd.sh
 2b0c585a10ba72c90a9274ada05cde07  ./scripts/lib/vllm_menu_intel.sh
 7ee84743158864b7f3f883ba2db2e1f4  ./scripts/lib/vllm_menu_nvidia.sh
 a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh

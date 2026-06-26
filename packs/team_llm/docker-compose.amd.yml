@@ -1,50 +1,8 @@
-# AMD ROCm team_llm — runs llama.cpp (llama-server), NOT vLLM.
-# vLLM's multi-GPU tensor-parallel deadlocks on RDNA4/PCIe (RCCL 2.27.7 regression), so it's
-# stuck at pipeline-parallel ~11 tok/s. llama.cpp's HIP split (--split-mode row) runs both
-# GPUs per token with no RCCL — ~2x faster (~22.7 tok/s on Qwen2.5-32B Q4 across 2x R9700) —
-# and serves the same OpenAI API on :8000, so Open WebUI is unchanged.
-#
-# This override replaces the engine: image + entrypoint + command, plus kfd/render passthrough.
-# MODEL_ID/MAX_CONTEXT/VLLM_IMAGE come from .env (written by install.sh from the AMD menu).
+# AMD ROCm GPU access for team_llm — layered over docker-compose.yml by install.sh.
+# AMD has no default container runtime, so the ROCm vLLM image needs the kfd + render
+# nodes explicitly or it can't see the GPU ("Failed to infer device type").
 services:
   inference:
-    image: ${VLLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-rocm}
-    entrypoint: ["/app/llama-server"]
-    command:
-      - "-hf"
-      - "${MODEL_ID:-bartowski/Qwen2.5-32B-Instruct-GGUF:Q4_K_M}"
-      - "-ngl"
-      - "99"
-      - "--split-mode"
-      - "row"
-      - "-c"
-      - "${MAX_CONTEXT:-32768}"
-      # Flash attention shrinks the attention compute buffer so the large -c (sized to free
-      # VRAM by recommend_llama_context) fits. KV cache is left at fp16 ON PURPOSE: a q8 KV
-      # cache halves memory but degrades attention to earlier tokens as context grows, which
-      # makes agentic/tool-use sessions lose track of prior tool results and re-call in a loop.
-      # On these 32GB+ R9700s fp16 still reaches the 128K cap, so we don't trade quality for it.
-      - "-fa"
-      - "on"
-      # Concurrency slots. llama.cpp can't autoscale like vLLM — --parallel is fixed at
-      # launch and statically splits -c into N slots of (-c / N) each (KV memory is the same
-      # either way, so this is free). Default 2 so a chat stream and a background request
-      # (e.g. a tool-result summarizer or a /v1/models probe) never contend for one slot and
-      # 503/connection-drop each other. 128K pool ÷ 2 = 64K per slot. Raise for more users.
-      - "--parallel"
-      - "${LLAMA_PARALLEL:-2}"
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8000"
-      - "--jinja"
-    environment:
-      # llama.cpp's -hf downloader doesn't speak the Olah mirror's API (it 404s on
-      # get_repo_commit), so force DIRECT HuggingFace for GGUF — this overrides the
-      # auto-detected HF_ENDPOINT mirror in .env. Public GGUFs need no token.
-      - HF_ENDPOINT=https://huggingface.co
-      # llama.cpp -hf cache → reuse the team_llm vllm_cache volume (/root/.cache/huggingface).
-      - LLAMA_CACHE=/root/.cache/huggingface
     devices:
       - /dev/kfd
       - /dev/dri
@@ -52,6 +10,6 @@ services:
       - seccomp:unconfined
     cap_add:
       - SYS_PTRACE
-    group_add:
-      - video
-      - render
+    environment:
+      # AMD/PCIe: disable peer-to-peer so the RCCL all-reduce path doesn't hang.
+      - NCCL_P2P_DISABLE=1
