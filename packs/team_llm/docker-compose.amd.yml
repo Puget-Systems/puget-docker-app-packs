@@ -1,8 +1,32 @@
-# AMD ROCm GPU access for team_llm — layered over docker-compose.yml by install.sh.
-# AMD has no default container runtime, so the ROCm vLLM image needs the kfd + render
-# nodes explicitly or it can't see the GPU ("Failed to infer device type").
+# AMD ROCm team_llm — runs llama.cpp (llama-server), NOT vLLM.
+# vLLM's multi-GPU tensor-parallel deadlocks on RDNA4/PCIe (RCCL 2.27.7 regression), so it's
+# stuck at pipeline-parallel ~11 tok/s. llama.cpp's HIP split (--split-mode row) runs both
+# GPUs per token with no RCCL — ~2x faster (~22.7 tok/s on Qwen2.5-32B Q4 across 2x R9700) —
+# and serves the same OpenAI API on :8000, so Open WebUI is unchanged.
+#
+# This override replaces the engine: image + entrypoint + command, plus kfd/render passthrough.
+# MODEL_ID/MAX_CONTEXT/VLLM_IMAGE come from .env (written by install.sh from the AMD menu).
 services:
   inference:
+    image: ${VLLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-rocm}
+    entrypoint: ["/app/llama-server"]
+    command:
+      - "-hf"
+      - "${MODEL_ID:-bartowski/Qwen2.5-32B-Instruct-GGUF:Q4_K_M}"
+      - "-ngl"
+      - "99"
+      - "--split-mode"
+      - "row"
+      - "-c"
+      - "${MAX_CONTEXT:-16384}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--jinja"
+    environment:
+      # llama.cpp -hf cache → reuse the team_llm vllm_cache volume (/root/.cache/huggingface).
+      - LLAMA_CACHE=/root/.cache/huggingface
     devices:
       - /dev/kfd
       - /dev/dri
@@ -10,6 +34,6 @@ services:
       - seccomp:unconfined
     cap_add:
       - SYS_PTRACE
-    environment:
-      # AMD/PCIe: disable peer-to-peer so the RCCL all-reduce path doesn't hang.
-      - NCCL_P2P_DISABLE=1
+    group_add:
+      - video
+      - render
