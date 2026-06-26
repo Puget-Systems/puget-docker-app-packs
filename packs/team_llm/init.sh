@@ -10,7 +10,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}   Puget Systems — Team LLM Setup (vLLM)${NC}"
+echo -e "${BLUE}   Puget Systems — Team LLM Setup${NC}"
 echo -e "${BLUE}============================================================${NC}"
 
 # --- Source shared libraries ---
@@ -102,7 +102,7 @@ echo ""
 
 read -p "Start the stack now? (Y/n): " START
 if [[ "$START" != "n" && "$START" != "N" ]]; then
-    echo -e "${BLUE}Starting vLLM server...${NC}"
+    echo -e "${BLUE}Starting inference server...${NC}"
 
     # Validate .env before launch — catch corruption early
     if ! validate_env ".env"; then

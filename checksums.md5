@@ -1,7 +1,7 @@
-9a34c243dec5f1df94e348a9d08ece1b  ./install.sh
+443bc106f89fa32e44d8455e90f5384d  ./install.sh
 c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 2c4eb02bcd3cc17de5c6dad9e0ae07f4  ./packs/personal_llm/init.sh
-37977bb55e43a9919f64e2c117635819  ./packs/team_llm/init.sh
+6d61c414912b1c5a3dd32201dd553fe5  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
 025ba28ecd53a7c95202a5ad197121f3  ./scripts/lib/env_write.sh
 876d9ea2e05bd0cbeaa34a38f3102453  ./scripts/lib/gpu_detect.sh
