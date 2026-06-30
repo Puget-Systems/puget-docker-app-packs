@@ -11,5 +11,7 @@ services:
     cap_add:
       - SYS_PTRACE
     environment:
-      # AMD/PCIe: disable peer-to-peer so the RCCL all-reduce path doesn't hang.
-      - NCCL_P2P_DISABLE=1
+      # P2P toggle. Default 1 = disabled (pipeline-parallel path; no peer link → no RCCL
+      # all-reduce hang on stock PCIe-no-XGMI boxes). For real tensor parallel on a host
+      # with working GPU P2P, the menu writes NCCL_P2P_DISABLE=0 (VLLM_PARALLEL_MODE=tp).
+      - NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE:-1}

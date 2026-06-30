@@ -90,6 +90,7 @@ select_vllm_model() {
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS=""
     VLLM_DTYPE="float16"
+    VLLM_NCCL_P2P_DISABLE="1"   # PP default disables P2P; TP mode flips this to 0
 
     # Vendor-specific default image
     if [ "${GPU_VENDOR:-nvidia}" = "amd" ]; then
@@ -258,13 +259,24 @@ select_vllm_model() {
             fi
         fi
 
-        # AMD/PCIe multi-GPU: vLLM's tensor-parallel all-reduce (RCCL) deadlocks on
-        # PCIe-connected Radeon GPUs with no XGMI/Infinity-Fabric link. Use pipeline
-        # parallelism (sequential layer split) instead. The compose emits
-        # --tensor-parallel-size=$GPU_COUNT first, then EXTRA_VLLM_ARGS, so the later
-        # --tensor-parallel-size 1 wins (argparse last-value), giving TP=1 + PP=N.
+        # AMD/PCIe multi-GPU parallel mode. vLLM tensor-parallel needs an all-reduce, which
+        # requires working GPU P2P. On a stock PCIe-no-XGMI box there's no P2P → the RCCL
+        # all-reduce DEADLOCKS, so we default to PIPELINE parallel (point-to-point, no
+        # collective). If the host provides real P2P (verify in-guest:
+        # python -c "import torch; print(torch.cuda.can_device_access_peer(0,1))" → True),
+        # set VLLM_PARALLEL_MODE=tp to use real tensor parallel for ~2x-ish (PCIe-bound).
         if [ "$VLLM_GPU_COUNT" -gt 1 ]; then
-            VLLM_EXTRA_ARGS="$VLLM_EXTRA_ARGS --tensor-parallel-size 1 --pipeline-parallel-size $VLLM_GPU_COUNT"
+            if [ "${VLLM_PARALLEL_MODE:-pp}" = "tp" ]; then
+                # Tensor parallel: keep the base compose's --tensor-parallel-size=$GPU_COUNT,
+                # and ENABLE P2P so the all-reduce uses the peer link instead of hanging.
+                VLLM_NCCL_P2P_DISABLE="0"
+            else
+                # Pipeline parallel (default): the compose emits --tensor-parallel-size=$GPU_COUNT
+                # first, then EXTRA_VLLM_ARGS, so the later --tensor-parallel-size 1 wins
+                # (argparse last-value), giving TP=1 + PP=N. Keep P2P disabled (no peer path).
+                VLLM_EXTRA_ARGS="$VLLM_EXTRA_ARGS --tensor-parallel-size 1 --pipeline-parallel-size $VLLM_GPU_COUNT"
+                VLLM_NCCL_P2P_DISABLE="1"
+            fi
         fi
     else
         # NVIDIA / Intel defaults

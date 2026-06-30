@@ -87,6 +87,7 @@ write_env_var "THINKING_ARGS" "$VLLM_THINKING_ARGS" ".env"
 write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" ".env"
 write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" ".env"
 write_env_var "DTYPE" "$VLLM_DTYPE" ".env"
+write_env_var "NCCL_P2P_DISABLE" "${VLLM_NCCL_P2P_DISABLE:-1}" ".env"
 # Preserve cache proxy from previous config if present
 if [ -n "${CACHE_PROXY:-}" ]; then
     write_env_var "CACHE_PROXY" "$CACHE_PROXY" ".env"
