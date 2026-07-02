@@ -6,10 +6,12 @@ A standardized, high-performance starter template system for AI and engineering 
 
 This repository uses an **App Pack** architecture. It provides specialized "Flavors" (Stacks) that serve as reliable foundations for your containerized applications, from basic Python scripts to multi-GPU inference servers.
 
-**Supported Hardware**:
+**Supported Hardware** (the installer auto-detects your vendor — no branch or flag to pick):
 *   **Standard**: Any x86_64 system with Docker
-*   **Accelerated**: NVIDIA GPUs with CUDA 12.6+ (Ada / RTX 4090, etc.)
-*   **Blackwell**: RTX 5090 / RTX PRO 6000 (CUDA 13.0, auto-detected)
+*   **NVIDIA**: CUDA 12.6+ (Ada / RTX 4090, etc.)
+*   **NVIDIA Blackwell**: RTX 5090 / RTX PRO 6000 / GB10 (CUDA 13.0, auto-detected)
+*   **AMD**: ROCm on RDNA4 (Radeon AI PRO R9700 / RX 9070)
+*   **Intel**: Arc Pro B70 (Battlemage) via the XPU backend
 
 ## Available Flavors
 
@@ -28,7 +30,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 ### 3. Personal LLM
 *   **Target**: Single-User AI Assistant
-*   **Engine**: Ollama (GPU-accelerated, easy model swapping)
+*   **Engine**: Ollama on NVIDIA/Intel; **llama.cpp** on AMD (both GPU-accelerated, easy model swapping)
 *   **Interface**: Open WebUI (ChatGPT-like)
 *   **Best For**: Personal workstations, one-command model management
 
@@ -36,7 +38,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 *   **Target**: Production Multi-User Inference
 *   **Engine**: vLLM (multi-GPU tensor parallelism, OpenAI-compatible API)
 *   **Interface**: Open WebUI
-*   **Models**: Qwen 3 (8B, 32B FP8), Qwen 3.5 MoE (35B, 122B — Coming Soon on Blackwell), DeepSeek R1 70B AWQ
+*   **Models**: Qwen 3.6 (35B MoE, 27B Dense), Qwen 3.5 MoE (35B, 122B), DeepSeek R1 70B, Nemotron 3 (Nano/Super NVFP4), GPT-OSS (20B/120B), Gemma 4 26B. The exact menu is vendor-specific (NVIDIA pre-quantized AWQ/NVFP4, AMD online FP8, Intel FP16) and VRAM-gated on your hardware.
 *   **Best For**: Shared workstations, teams needing a single high-throughput endpoint
 
 ---
@@ -49,8 +51,11 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/main/setup.sh -o setup.sh && bash setup.sh
 ```
 
-The interactive wizard will:
-1.  Install Docker, NVIDIA drivers, and Container Toolkit (if needed)
+**One install path for every GPU.** The installer auto-detects your vendor
+(NVIDIA / AMD / Intel) and architecture (including Blackwell → CUDA 13) and
+selects the right container images and model menu — there is no per-vendor
+branch or flag to choose. The interactive wizard will:
+1.  Install Docker, GPU drivers, and (NVIDIA) the Container Toolkit if needed
 2.  Prompt you to select a Flavor
 3.  Configure GPU settings and model selection (for LLM packs)
 4.  Build and launch the stack
@@ -63,29 +68,12 @@ cd puget-docker-app-packs
 ./install.sh
 ```
 
-### Intel Arc (B70 / Battlemage)
-
-For Intel Arc Pro B70 GPUs, use the `intel-b70` branch (multi-GPU vLLM on the Intel XPU backend). The installer auto-detects the Intel GPU, offers to install the Intel Compute Runtime, and builds the XPU image — same flow as the NVIDIA path, just from a different branch.
-
-One-line install (setup route):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/intel-b70/setup.sh -o setup.sh && BRANCH=intel-b70 bash setup.sh
-```
-
-Manual install (clone route):
-
-```bash
-git clone -b intel-b70 https://github.com/Puget-Systems/puget-docker-app-packs.git && cd puget-docker-app-packs && ./install.sh
-```
-
-### Develop Branch
-
-For the latest features (not yet released):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/develop/setup.sh -o setup.sh && BRANCH=develop bash setup.sh
-```
+> **Testing the develop branch (pre-release):** the unified installer currently
+> lives on `develop` while it's validated across NVIDIA/AMD/Intel hardware. Until
+> it merges to `main`, test it with:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/develop/setup.sh -o setup.sh && BRANCH=develop bash setup.sh
+> ```
 
 ---
 
@@ -103,15 +91,15 @@ curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack
 ### NVIDIA Drivers (GPU Stacks)
 - **Required for**: ComfyUI, Personal LLM, Team LLM
 - **Ada (RTX 4090)**: `sudo apt install nvidia-driver-550` (driver 550+)
-- **Blackwell (RTX 5090)**: `sudo apt install nvidia-driver-580-open` (open kernel modules required)
-- Verify: `nvidia-smi`
+- **Blackwell (RTX 5090 / PRO 6000 / GB10)**: `sudo apt install nvidia-driver-580-open` (open kernel modules required)
+- Driver ≥580 is required for the CUDA 13 (`cu130`) model images used on Blackwell; ≥570 for the CUDA 12.8 stable images. Verify: `nvidia-smi`
 
 ### NVIDIA Container Toolkit (GPU Stacks)
 - The installer will offer to install this automatically
 - Manual: [NVIDIA Container Toolkit Install Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Intel Arc Drivers (B70 / Battlemage)
-- **Required for**: the Intel Arc install (`intel-b70` branch)
+- **Required for**: Intel Arc GPUs (auto-detected — no separate branch)
 - The installer **auto-detects** the Intel GPU and offers to install the Intel Compute Runtime (`intel-opencl-icd`, `libze-intel-gpu1`, `clinfo`, …) — no manual step needed in most cases.
 - For the newest Battlemage drivers (26.09.x+), add the `kobuk-team/intel-graphics` PPA *before* running the installer:
   ```bash
