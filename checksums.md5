@@ -12,7 +12,7 @@ bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 97a164ad1b357ea33f0cd1b30a405623  ./scripts/lib/vllm_menu_intel.sh
 54cf6aabd23c980597de577ac1737320  ./scripts/lib/vllm_menu_nvidia.sh
 a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh
-2665ce080bc52fde25458e00216c8ad7  ./scripts/lib/vllm_monitor.sh
+d4b72980ab188da031cd6944e713ce09  ./scripts/lib/vllm_monitor.sh
 c2c687be5bd2c484ad32802f0b51c40b  ./scripts/list_models.sh
 2fca3f93015a16fe36c2e2e5e24b2c97  ./scripts/validate_models.sh
 56ba1f0d2accd4998f6f49ceb6a5e522  ./setup.sh

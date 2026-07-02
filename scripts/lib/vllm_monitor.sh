@@ -3,11 +3,19 @@
 # Source this file; do not execute directly.
 # Requires ANSI color variables (GREEN, BLUE, YELLOW, RED, NC) to be set.
 #
-# Usage: wait_for_vllm <container_name> <model_size_gb>
+# Usage: wait_for_vllm <container_name> <model_size_gb> [stall_seconds]
+#
+# Readiness is bounded by STALL, not a flat wall-clock: the load may take as long as
+# it needs as long as it keeps making progress (downloading, loading weights, or
+# compiling). We fingerprint progress each poll (container net I/O + disk I/O + GPU
+# memory + tail-log checksum) and only give up after STALL_SECONDS with NO change —
+# which reliably distinguishes a slow-but-progressing load from a true hang (e.g. an
+# NCCL deadlock, where all of those freeze). Returns 0 when the API is ready, else 1.
 
 wait_for_vllm() {
-    local CONTAINER_NAME="${1:?Usage: wait_for_vllm <container_name> <model_size_gb>}"
+    local CONTAINER_NAME="${1:?Usage: wait_for_vllm <container_name> <model_size_gb> [stall_seconds]}"
     local MODEL_SIZE_GB="${2:-0}"
+    local STALL_SECONDS="${3:-${VLLM_STALL_SECONDS:-600}}"  # no-progress window before declaring a hang
 
     # Disable set -e for the monitoring loop — polling commands (grep -q,
     # docker stats, curl) routinely return non-zero and must not kill the script.
@@ -15,17 +23,19 @@ wait_for_vllm() {
     set +e
 
     local READY=false
+    local RESULT=1               # assume failure until the API is confirmed ready
     local LAST_PHASE=""
     local PHASE_LEVEL=0           # Monotonic: phases only advance forward
     local LAST_RESTART_COUNT=0    # Track container restarts to detect crash loops
     local CRASH_DETECTIONS=0      # Number of times we've seen a restart increment
-    local START_TIME
+    local START_TIME LAST_PROGRESS_TIME LAST_FP=""
     START_TIME=$(date +%s)
+    LAST_PROGRESS_TIME=$START_TIME
 
     while ! $READY; do
         # Check if container is still running
         if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            echo -e "\n${RED}✗ Inference server exited. Check logs:${NC}"
+            echo -e "\n${RED}✗ vLLM container exited. Check logs:${NC}"
             echo -e "  ${BLUE}docker compose logs inference${NC}"
             break
         fi
@@ -43,7 +53,7 @@ wait_for_vllm() {
 
         if [ "$CRASH_DETECTIONS" -ge 2 ]; then
             echo ""
-            echo -e "${RED}✗ Inference server is crash-looping (restarted ${RESTART_COUNT} times).${NC}"
+            echo -e "${RED}✗ vLLM is crash-looping (restarted ${RESTART_COUNT} times).${NC}"
             echo ""
             # Extract the actual error from the logs
             local ERROR_MSG
@@ -69,6 +79,7 @@ wait_for_vllm() {
             local ELAPSED_SEC=$((ELAPSED % 60))
             echo -e "\n${GREEN}✓ Model loaded and ready! (${ELAPSED_MIN}m ${ELAPSED_SEC}s)${NC}"
             READY=true
+            RESULT=0
             break
         fi
 
@@ -86,7 +97,11 @@ wait_for_vllm() {
             CANDIDATE_PHASE="Capturing CUDA graphs"
             CANDIDATE_LEVEL=5
             DETAIL="${GRAPH_PCT:-working...}"
-        elif echo "$LAST_LOG" | grep -q "torch.compile\|Dynamo bytecode\|compile range"; then
+        elif echo "$LAST_LOG" | grep -qE "Dynamo bytecode transform|Compiling a graph|Start compiling|torch\.compile takes [0-9]"; then
+            # Match real compile activity only. Plain "torch.compile" also appears in
+            # the engine config dump and in "disabling torch.compile" (enforce-eager),
+            # which previously latched this phase at level 4 and masked the download/
+            # load phases for the rest of startup.
             CANDIDATE_PHASE="Compiling model kernels"
             CANDIDATE_LEVEL=4
             DETAIL="(torch.compile)"
@@ -94,7 +109,7 @@ wait_for_vllm() {
             CANDIDATE_PHASE="Autotuning kernels"
             CANDIDATE_LEVEL=3
             DETAIL=""
-        elif echo "$LAST_LOG" | grep -qiE "Loading safetensors|Loading weights|Starting to load model|llama_model_loader|load_model|loading model"; then
+        elif echo "$LAST_LOG" | grep -q "Loading safetensors\|Loading weights\|Starting to load model"; then
             local SHARD_PCT
             SHARD_PCT=$(echo "$LAST_LOG" | grep -oE '[0-9]+% Completed' | tail -1)
             CANDIDATE_PHASE="Loading model weights"
@@ -186,9 +201,60 @@ wait_for_vllm() {
             printf "\r  ⏳ [%s] %s...           " "$ELAPSED_STR" "$PHASE"
         fi
 
+        # ── Stall detection ──────────────────────────────────────────────────
+        # Fingerprint forward progress: network I/O + disk I/O (download), GPU memory
+        # (weight load), and a checksum of the latest log lines (compile/warmup). Any
+        # change means we're making progress, so reset the stall clock. If NOTHING
+        # changes for STALL_SECONDS, the load is hung — give up. This lets huge cold
+        # downloads take as long as they need while still catching real deadlocks.
+        local _io _gpu _logsig _fp
+        _io=$(docker stats --no-stream --format '{{.NetIO}}|{{.BlockIO}}' "$CONTAINER_NAME" 2>/dev/null)
+        _gpu=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | paste -sd+ - 2>/dev/null)
+        [ -z "$_gpu" ] && _gpu=$(rocm-smi --showmeminfo vram 2>/dev/null | grep -iE 'used' | grep -oE '[0-9]+' | paste -sd+ - 2>/dev/null)
+        _logsig=$(docker logs --tail 20 "$CONTAINER_NAME" 2>&1 | cksum 2>/dev/null)
+        _fp="${_io}|${_gpu}|${_logsig}"
+        if [ "$_fp" != "$LAST_FP" ]; then
+            LAST_FP="$_fp"
+            LAST_PROGRESS_TIME=$(date +%s)
+        elif [ $(( $(date +%s) - LAST_PROGRESS_TIME )) -ge "$STALL_SECONDS" ]; then
+            echo ""
+            echo -e "${RED}✗ vLLM made no progress for ${STALL_SECONDS}s (no I/O, GPU, or log activity) — treating as hung.${NC}"
+            local ERR
+            ERR=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -iE "error|cuda|nccl|out of memory|timeout|deadlock" | tail -4)
+            [ -n "$ERR" ] && { echo -e "${RED}  Recent log signals:${NC}"; echo "$ERR" | while IFS= read -r l; do echo -e "  ${YELLOW}${l}${NC}"; done; }
+            break
+        fi
+
+        # ── Fatal-error fast path ────────────────────────────────────────────
+        # Some failures leave the engine dead while the container stays Up (e.g.
+        # Intel Level Zero DEVICE_LOST during memory profiling, or a worker
+        # RuntimeError with the parent process still alive) — no restart, so the
+        # crash-loop detector never fires, and waiting out the full stall window
+        # costs STALL_SECONDS per model. A terminal signature in the log tail
+        # combined with ≥30s of zero progress is decisive much sooner. The 30s
+        # gate avoids false positives while a restarting engine still shows the
+        # previous attempt's trace in its tail (an actively rebooting engine
+        # changes the logs, which resets LAST_PROGRESS_TIME above).
+        if [ $(( $(date +%s) - LAST_PROGRESS_TIME )) -ge 30 ]; then
+            local FATAL
+            FATAL=$(docker logs --tail 40 "$CONTAINER_NAME" 2>&1 | grep -m1 -E \
+                'UR_RESULT_ERROR_DEVICE_LOST|EngineCore failed to start|Failed to infer device type|RuntimeError: Worker failed|torch\.OutOfMemoryError|CUDA error: no kernel image|driver/library version mismatch')
+            if [ -n "$FATAL" ]; then
+                echo ""
+                echo -e "${RED}✗ Inference engine hit a fatal error (container up, engine dead):${NC}"
+                echo -e "  ${YELLOW}${FATAL}${NC}"
+                echo "  Troubleshooting:"
+                echo -e "  ${BLUE}docker compose logs inference${NC}  - View full logs"
+                echo -e "  DEVICE_LOST usually means the GPU/driver crashed — check ${BLUE}sudo dmesg | tail${NC};"
+                echo -e "  a reboot may be needed before the GPU responds again."
+                break
+            fi
+        fi
+
         sleep 3
     done
     echo ""
     # Restore previous shell options
     eval "$OLD_OPTS"
+    return $RESULT
 }
