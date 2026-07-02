@@ -46,7 +46,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 ### One-Line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/main/setup.sh -o setup.sh && bash setup.sh
+curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/main/setup.sh -o setup.sh && bash setup.sh
 ```
 
 The interactive wizard will:
@@ -58,8 +58,8 @@ The interactive wizard will:
 ### Manual Install
 
 ```bash
-git clone https://github.com/Puget-Systems/puget-docker-app-pack.git
-cd puget-docker-app-pack
+git clone https://github.com/Puget-Systems/puget-docker-app-packs.git
+cd puget-docker-app-packs
 ./install.sh
 ```
 
@@ -70,13 +70,13 @@ For Intel Arc Pro B70 GPUs, use the `intel-b70` branch (multi-GPU vLLM on the In
 One-line install (setup route):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/intel-b70/setup.sh -o setup.sh && BRANCH=intel-b70 bash setup.sh
+curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/intel-b70/setup.sh -o setup.sh && BRANCH=intel-b70 bash setup.sh
 ```
 
 Manual install (clone route):
 
 ```bash
-git clone -b intel-b70 https://github.com/Puget-Systems/puget-docker-app-pack.git && cd puget-docker-app-pack && ./install.sh
+git clone -b intel-b70 https://github.com/Puget-Systems/puget-docker-app-packs.git && cd puget-docker-app-packs && ./install.sh
 ```
 
 ### Develop Branch
@@ -84,7 +84,7 @@ git clone -b intel-b70 https://github.com/Puget-Systems/puget-docker-app-pack.gi
 For the latest features (not yet released):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-pack/develop/setup.sh -o setup.sh && BRANCH=develop bash setup.sh
+curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/develop/setup.sh -o setup.sh && BRANCH=develop bash setup.sh
 ```
 
 ---

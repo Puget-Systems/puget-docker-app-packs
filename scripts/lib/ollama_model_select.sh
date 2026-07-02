@@ -86,7 +86,9 @@ select_ollama_model() {
 
     # Multi-GPU warning: Ollama uses pipeline parallelism (layer splitting)
     # which is significantly slower than tensor parallelism (vLLM).
-    if [ "$GPU_COUNT" -gt 1 ] && [ "$OLLAMA_MODEL_VRAM_GB" -gt "$VRAM_GB" ]; then
+    # PUGET_NONINTERACTIVE=1 (set by scripts/list_models.sh and the bench) accepts
+    # the layer-split trade-off without prompting so enumeration doesn't block.
+    if [ "$GPU_COUNT" -gt 1 ] && [ "$OLLAMA_MODEL_VRAM_GB" -gt "$VRAM_GB" ] && [ "${PUGET_NONINTERACTIVE:-0}" != "1" ]; then
         echo ""
         echo -e "${YELLOW}⚠ WARNING: ${OLLAMA_MODEL_TAG} (~${OLLAMA_MODEL_VRAM_GB} GB) exceeds single GPU capacity (${VRAM_GB} GB).${NC}"
         echo -e "  Ollama will split layers across GPUs, which is ${RED}significantly slower${NC}"

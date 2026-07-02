@@ -15,6 +15,7 @@ detect_gpus() {
     COMPUTE_MAJOR=0
     IS_BLACKWELL=false
     NIGHTLY_PREFIX="nightly"
+    DRIVER_VERSION=""
 
     # --- AMD DETECTION ---
     # Check for AMD GPUs via PCI vendor ID 0x1002
@@ -48,6 +49,8 @@ detect_gpus() {
         VRAM_MB=$((amd_vram_bytes / 1024 / 1024))
         VRAM_GB=$((VRAM_MB / 1024))
         TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
+        # amdgpu kernel driver version (informational; ROCm userspace ships in the container)
+        DRIVER_VERSION=$(cat /sys/module/amdgpu/version 2>/dev/null || true)
         return 0
     fi
 
@@ -82,6 +85,7 @@ detect_gpus() {
         GPU_VENDOR="nvidia"
         GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
         GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
         VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
 
         # Unified memory GPUs (e.g., NVIDIA GB10 / DGX Spark) report [N/A] for VRAM.
@@ -108,4 +112,31 @@ detect_gpus() {
     fi
 
     return 1
+}
+
+# min_driver_for_image IMAGE — echo the minimum NVIDIA driver major version the
+# container image needs, or nothing when no gate applies (AMD/Intel images ship
+# their own userspace; only the NVIDIA driver↔CUDA coupling bites here).
+# The mapping is the CUDA release each image line is built against:
+#   CUDA 13.0 → driver ≥ 580,  CUDA 12.8/12.9 → driver ≥ 570.
+# This is the single source of truth — the bench sources this file and gates
+# model selection with it, so keep it updated when image lines move to a new CUDA.
+min_driver_for_image() {
+    case "$1" in
+        *cu130*)                   echo 580 ;;   # CUDA 13.0 (Blackwell nightly line)
+        *cu128*|*cu129*)           echo 570 ;;
+        vllm/vllm-openai:*)        echo 570 ;;   # stable/latest/nightly are CUDA 12.8+ builds
+        rocm/*|*rocm*|intel/*|puget-vllm-xpu*) ;;  # non-NVIDIA: no NVIDIA driver gate
+        *) ;;
+    esac
+}
+
+# driver_meets_min INSTALLED MIN — return 0 when the installed driver major
+# version satisfies the minimum (or when either side is unknown — never block
+# on missing data, the container launch will surface a real mismatch).
+driver_meets_min() {
+    local installed_major="${1%%.*}" min="$2"
+    [ -z "$min" ] && return 0
+    [[ "$installed_major" =~ ^[0-9]+$ ]] || return 0
+    [ "$installed_major" -ge "$min" ]
 }

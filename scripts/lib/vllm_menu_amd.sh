@@ -291,5 +291,8 @@ select_vllm_model() {
         fi
     fi
 
+    # Minimum host driver for the image this entry resolved to (gpu_detect.sh helper)
+    VLLM_MIN_DRIVER=$(min_driver_for_image "$VLLM_IMAGE" 2>/dev/null || true)
+
     return 0
 }

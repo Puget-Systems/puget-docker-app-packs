@@ -66,7 +66,8 @@ show_vllm_model_menu() {
 # select_vllm_model <choice>
 #   Sets: VLLM_MODEL_ID, VLLM_GPU_COUNT, VLLM_MODEL_SIZE_GB,
 #         VLLM_TOOL_CALL_ARGS, VLLM_REASONING_ARGS, VLLM_THINKING_ARGS,
-#         VLLM_EXTRA_ARGS, VLLM_DTYPE, VLLM_IMAGE, VLLM_GPU_MEM_UTIL, VLLM_MAX_CTX
+#         VLLM_EXTRA_ARGS, VLLM_DTYPE, VLLM_IMAGE, VLLM_GPU_MEM_UTIL, VLLM_MAX_CTX,
+#         VLLM_MIN_DRIVER (min NVIDIA driver major for the chosen image, empty = no gate)
 #   Returns: 0 = model selected, 1 = VRAM insufficient, 2 = skipped/custom
 select_vllm_model() {
     local choice="$1"
@@ -218,6 +219,9 @@ select_vllm_model() {
             VLLM_GPU_MEM_UTIL="0.92"
         fi
     fi
+
+    # Minimum host driver for the image this entry resolved to (gpu_detect.sh helper)
+    VLLM_MIN_DRIVER=$(min_driver_for_image "$VLLM_IMAGE" 2>/dev/null || true)
 
     return 0
 }
