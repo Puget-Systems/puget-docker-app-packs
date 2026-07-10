@@ -24,10 +24,12 @@ services:
       - "-fa"
       - "on"
       # fp16 KV cache (no --cache-type flags): q8 KV degrades long-context tool use.
-      # Slots scale with GPU count (init.sh writes 2×GPUs, clamped [2,8]); llama.cpp divides
-      # -c evenly across slots, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL.
+      # STATIC slots (default 2), NOT vLLM-style auto-scaling: llama.cpp splits -c evenly
+      # across --parallel N, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL. Raising
+      # slots adds concurrency but shrinks each request's context. (The opt-in vLLM engine
+      # — TEAM_AMD_ENGINE=vllm — auto-scales concurrency dynamically instead.)
       - "--parallel"
-      - "${LLAMA_PARALLEL:-4}"
+      - "${LLAMA_PARALLEL:-2}"
       - "-c"
       - "${MAX_CONTEXT:-65536}"
       - "--host"

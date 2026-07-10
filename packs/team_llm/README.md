@@ -16,6 +16,15 @@ Production-grade local LLM server for teams, serving an OpenAI-compatible API. N
 
 > For personal use with easy model swapping, see the **Personal LLM** pack.
 
+## Concurrency: vLLM vs llama.cpp (AMD)
+
+The two engines handle multi-user load very differently — this matters when sizing an AMD box:
+
+- **vLLM (NVIDIA/Intel)** auto-scales. PagedAttention serves many simultaneous requests out of one shared KV-cache pool, allocating context on demand — you don't pre-declare how many users to expect.
+- **llama.cpp (AMD default)** uses **static slots**. `MAX_CONTEXT` (`-c`) is a fixed KV pool split **evenly** across `--parallel N` slots, so **per-request context = `MAX_CONTEXT` ÷ `LLAMA_PARALLEL`**, and traffic is pre-segmented into those N slots. More slots = more concurrent requests but proportionally **less context each**.
+
+The AMD default is **2 slots** (one active chat + one background task), sized so each request keeps a large context window. To trade context for more concurrency, raise `LLAMA_PARALLEL` in `.env` (e.g. `4` on a dual-GPU box quarters per-request context but serves 4 at once). If your team genuinely needs many-user dynamic concurrency on AMD, the opt-in vLLM FP8 engine (`TEAM_AMD_ENGINE=vllm`) is the auto-scaling path — at lower single-stream throughput.
+
 ## Quick Start
 
 1.  Run the setup wizard (detects GPUs, picks a model):

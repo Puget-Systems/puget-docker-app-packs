@@ -114,7 +114,7 @@ if [ "$ENGINE" = "llama" ]; then
     write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" ".env"
     write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" ".env"
     write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" ".env"
-    write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-4}" ".env"
+    write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-2}" ".env"
     write_env_var "LLAMA_SPLIT_MODE" "${LLAMA_SPLIT_MODE:-layer}" ".env"
     write_env_var "TEAM_AMD_ENGINE" "llama" ".env"
 else
@@ -164,7 +164,7 @@ echo ""
 if [ "$ENGINE" = "llama" ]; then
     echo "  Model:    $LLAMA_MODEL_ID"
     echo "  GPUs:     ${GPU_COUNT} (split=${LLAMA_SPLIT_MODE:-layer})"
-    echo "  Context:  ${LLAMA_MAX_CTX} total (${LLAMA_PARALLEL:-4} slots → $((LLAMA_MAX_CTX / ${LLAMA_PARALLEL:-4})) per request)"
+    echo "  Context:  ${LLAMA_MAX_CTX} total (${LLAMA_PARALLEL:-2} static slots → $((LLAMA_MAX_CTX / ${LLAMA_PARALLEL:-2})) per request)"
 else
     echo "  Model:    $VLLM_MODEL_ID"
     echo "  GPUs:     $VLLM_GPU_COUNT"

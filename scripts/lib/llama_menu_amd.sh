@@ -11,7 +11,15 @@
 # Models are GGUF (already-quantized, small downloads). The AMD compose overrides run:
 #   llama-server -hf $MODEL_ID -ngl 99 --split-mode $LLAMA_SPLIT_MODE -fa on
 #                --parallel $LLAMA_PARALLEL -c $MAX_CONTEXT ...
-# Pack profile knob (set before calling select_llama_model):
+#
+# CONCURRENCY MODEL: unlike vLLM (PagedAttention auto-scales many requests over one shared
+# KV pool), llama.cpp STATICALLY pre-segments: -c is a fixed pool split EVENLY across
+# --parallel N slots, so per-request context = MAX_CONTEXT / N and more slots = less context
+# each. Default is 2 slots (one active chat + one background task) for both packs — enough
+# for a workstation without gutting context; raise LLAMA_PARALLEL in .env to trade context
+# for concurrency.
+# Pack profile knobs (set before calling select_llama_model):
+#   LLAMA_DEFAULT_PARALLEL — slot count (default 2 for both packs).
 #   LLAMA_MIN_CTX_PER_SLOT — per-request context floor (Personal 8192 default; Team 16384).
 # Source only; sets LLAMA_* output vars.
 
@@ -153,13 +161,13 @@ select_llama_model() {
         LLAMA_SPLIT_MODE="layer"
     fi
 
-    # Concurrency slots scale with the hardware: 2 per GPU, clamped to [2, 8] (measured:
-    # dual R9700 throughput rises to concurrency 4 and plateaus by 8). llama.cpp divides
-    # -c evenly across slots (per-request ctx = -c / N), so on tight-VRAM boxes we shed
-    # slots until each keeps at least LLAMA_MIN_CTX_PER_SLOT.
-    LLAMA_PARALLEL=$(( 2 * ${GPU_COUNT:-1} ))
-    [ "$LLAMA_PARALLEL" -lt 2 ] && LLAMA_PARALLEL=2
-    [ "$LLAMA_PARALLEL" -gt 8 ] && LLAMA_PARALLEL=8
+    # Concurrency slots. llama.cpp does NOT auto-scale like vLLM: -c is a fixed KV pool
+    # split EVENLY across --parallel N slots (per-request ctx = -c / N) and traffic is
+    # statically pre-segmented, so more slots = proportionally less context per request.
+    # Default 2 (one active chat + one background task, e.g. a summarizer) — enough for a
+    # workstation without gutting context. On tight-VRAM boxes we shed to 1 slot so the
+    # single request keeps a usable window.
+    LLAMA_PARALLEL="${LLAMA_DEFAULT_PARALLEL:-2}"
     local min_slot="${LLAMA_MIN_CTX_PER_SLOT:-8192}"
     local headroom_ctx=$(( (TOTAL_VRAM - LLAMA_MODEL_SIZE_GB - 4) * 3000 ))
     while [ "$LLAMA_PARALLEL" -gt 1 ] && [ $(( headroom_ctx / LLAMA_PARALLEL )) -lt "$min_slot" ]; do

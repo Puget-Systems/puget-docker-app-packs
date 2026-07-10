@@ -23,8 +23,9 @@ services:
       - "-fa"
       - "on"
       # Vision (mmproj) left ENABLED — verified harmless. Multimodal GGUFs get image input free.
-      # Slots scale with GPU count (init.sh writes 2×GPUs, clamped [2,8]); llama.cpp divides
-      # -c evenly across slots, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL.
+      # STATIC 2 slots (one active chat + one background task): llama.cpp splits -c evenly
+      # across --parallel N, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL. Raise
+      # LLAMA_PARALLEL in .env for more concurrency at the cost of per-request context.
       - "--parallel"
       - "${LLAMA_PARALLEL:-2}"
       - "-c"
