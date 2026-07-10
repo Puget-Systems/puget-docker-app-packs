@@ -3,7 +3,7 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 1ec287c6d93a0c1c4c8a2293e838d51a  ./packs/personal_llm/init.sh
 3ac56ec3d704837b7f4aeb9599db85bb  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
-025ba28ecd53a7c95202a5ad197121f3  ./scripts/lib/env_write.sh
+4147a673ac8b7a8291501490d01e5164  ./scripts/lib/env_write.sh
 a47c08a608755e7f9d6c64ea011f4b2d  ./scripts/lib/gpu_detect.sh
 11774fb0f5225fb0a93a4b660cbfe480  ./scripts/lib/llama_menu_amd.sh
 d5099925571762201ba5ab887d002784  ./scripts/lib/ollama_model_select.sh

@@ -18,7 +18,10 @@ write_env_header() {
 }
 
 # write_env_var <key> <value> [env_file]
-#   Appends KEY=VALUE to .env.
+#   Writes KEY=VALUE to .env, REPLACING any existing occurrence of the key (drop all,
+#   append fresh). docker compose takes the LAST occurrence, so duplicates "worked" by
+#   luck — but validate_env flags them, and re-runs of the non-truncating callers
+#   (e.g. personal_llm init.sh) used to stack one copy per run.
 #   Skips if value is empty (avoids writing KEY= with no value).
 write_env_var() {
     local key="${1:?Usage: write_env_var <key> <value> [env_file]}"
@@ -30,6 +33,9 @@ write_env_var() {
         return 0
     fi
 
+    if [ -f "$env_file" ] && grep -q "^${key}=" "$env_file"; then
+        grep -v "^${key}=" "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+    fi
     echo "${key}=${value}" >> "$env_file"
 }
 
