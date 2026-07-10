@@ -45,8 +45,29 @@ emit_row() { # pack engine choice model_id size_gb min_driver image gpu_count dt
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$@"
 }
 
-# ── team_llm (vLLM, all vendors via the dispatcher) ─────────────────────────
+# ── team_llm (vLLM on NVIDIA/Intel; llama.cpp default + vLLM opt-in on AMD) ─
 if [ "$PACK_FILTER" = "all" ] || [ "$PACK_FILTER" = "team_llm" ]; then
+    # AMD default engine is llama.cpp (TEAM_AMD_ENGINE=llama). Emit its rows first;
+    # the vLLM rows below stay too (opt-in engine) — contract v1 consumers key on
+    # the engine column, and extra rows are tolerated.
+    if [ "$GPU_VENDOR" = "amd" ] && [ -f "$LIB_DIR/llama_menu_amd.sh" ]; then
+        # shellcheck source=lib/llama_menu_amd.sh
+        source "$LIB_DIR/llama_menu_amd.sh"
+        LLAMA_MIN_CTX_PER_SLOT=16384   # team profile (matches install.sh/init.sh)
+        show_llama_model_menu >/dev/null 2>&1
+        _max="${MENU_MAX:-11}"
+        for _c in $(seq 1 "$_max"); do
+            _row=$(
+                if select_llama_model "$_c" >/dev/null 2>&1 </dev/null; then
+                    emit_row "team_llm" "llamacpp" "$_c" "$LLAMA_MODEL_ID" \
+                        "${LLAMA_MODEL_SIZE_GB:-0}" "" "$LLAMA_IMAGE" \
+                        "${LLAMA_GPU_COUNT:-1}" "" "${LLAMA_MAX_CTX:-}"
+                fi
+            ) || true
+            [ -n "$_row" ] && echo "$_row"
+        done
+        unset LLAMA_MIN_CTX_PER_SLOT
+    fi
     # shellcheck source=lib/vllm_model_select.sh
     source "$LIB_DIR/vllm_model_select.sh"
     show_vllm_model_menu >/dev/null 2>&1   # loads the vendor impl + sets MENU_MAX
@@ -71,7 +92,7 @@ if [ "$PACK_FILTER" = "all" ] || [ "$PACK_FILTER" = "personal_llm" ]; then
         # shellcheck source=lib/llama_menu_amd.sh
         source "$LIB_DIR/llama_menu_amd.sh"
         show_llama_model_menu >/dev/null 2>&1
-        _max="${MENU_MAX:-9}"
+        _max="${MENU_MAX:-11}"
         for _c in $(seq 1 "$_max"); do
             _row=$(
                 if select_llama_model "$_c" >/dev/null 2>&1 </dev/null; then

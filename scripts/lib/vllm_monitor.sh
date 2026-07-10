@@ -72,8 +72,11 @@ wait_for_vllm() {
             break
         fi
 
-        # Check if API is responding (model fully loaded)
-        if curl -s --max-time 2 http://localhost:8000/v1/models > /dev/null 2>&1; then
+        # Check if API is responding (model fully loaded). -f is load-bearing: llama-server
+        # binds its socket BEFORE the model finishes loading and answers 503 ("Loading
+        # model") — without -f a 503 counts as ready. vLLM refuses connections until
+        # ready, so -f is a no-op there.
+        if curl -sf --max-time 2 http://localhost:8000/v1/models > /dev/null 2>&1; then
             local ELAPSED=$(( $(date +%s) - START_TIME ))
             local ELAPSED_MIN=$((ELAPSED / 60))
             local ELAPSED_SEC=$((ELAPSED % 60))
@@ -238,7 +241,7 @@ wait_for_vllm() {
         if [ $(( $(date +%s) - LAST_PROGRESS_TIME )) -ge 30 ]; then
             local FATAL
             FATAL=$(docker logs --tail 40 "$CONTAINER_NAME" 2>&1 | grep -m1 -E \
-                'UR_RESULT_ERROR_DEVICE_LOST|EngineCore failed to start|Failed to infer device type|RuntimeError: Worker failed|torch\.OutOfMemoryError|CUDA error: no kernel image|driver/library version mismatch')
+                'UR_RESULT_ERROR_DEVICE_LOST|EngineCore failed to start|Failed to infer device type|RuntimeError: Worker failed|torch\.OutOfMemoryError|CUDA error: no kernel image|driver/library version mismatch|GGML_ASSERT|error loading model|failed to load model')
             if [ -n "$FATAL" ]; then
                 echo ""
                 echo -e "${RED}✗ Inference engine hit a fatal error (container up, engine dead):${NC}"

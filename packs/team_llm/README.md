@@ -1,17 +1,17 @@
 # Team LLM Pack
 
-Production-grade local LLM server for teams. Multi-GPU tensor parallelism with vLLM, serving an OpenAI-compatible API.
+Production-grade local LLM server for teams, serving an OpenAI-compatible API. NVIDIA/Intel run vLLM (multi-GPU tensor parallelism); AMD runs llama.cpp by default (layer-split GGUF — 2×+ faster than vLLM on RDNA4, where RCCL tensor parallelism is broken) with vLLM FP8 available via `TEAM_AMD_ENGINE=vllm`.
 
 ## Components
 
-1.  **The Engine (vLLM)**: High-throughput inference with tensor parallelism across multiple GPUs.
+1.  **The Engine**: vLLM (NVIDIA/Intel) or llama.cpp (AMD default) — high-throughput multi-GPU inference.
 2.  **The Interface (Open WebUI)**: ChatGPT-like interface connected via OpenAI API.
 3.  **The Brain (AutoGen)**: *Advanced Users*. Agent workflow engine for "Swarms of Experts".
 
 ## When to Use This Pack
 
 - **Multiple users** sharing one workstation or server
-- You need **multi-GPU tensor parallelism** (vLLM splits computation, not just memory)
+- You need **multi-GPU inference** (vLLM tensor parallelism; llama.cpp layer split on AMD)
 - You're serving a **single model in production** (less model swapping, more throughput)
 
 > For personal use with easy model swapping, see the **Personal LLM** pack.

@@ -70,6 +70,19 @@ if declare -f show_vllm_model_menu >/dev/null; then
     done
 fi
 
+echo "== llama.cpp menu (AMD Personal + Team) =="
+if [ -f "$REPO_ROOT/scripts/lib/llama_menu_amd.sh" ]; then
+    # shellcheck source=lib/llama_menu_amd.sh
+    source "$REPO_ROOT/scripts/lib/llama_menu_amd.sh"
+    show_llama_model_menu >/dev/null 2>&1   # sets MENU_MAX
+    for c in $(seq 1 "${MENU_MAX:-11}"); do
+        LLAMA_MODEL_ID=""
+        select_llama_model "$c" </dev/null >/dev/null 2>&1 || true
+        [ -z "$LLAMA_MODEL_ID" ] && continue           # Custom / Skip / unset
+        check_hf "llama[$c]" "$LLAMA_MODEL_ID"
+    done
+fi
+
 echo "== Ollama menu =="
 if declare -f select_ollama_model >/dev/null; then
     om_max="${MENU_MAX:-8}"

@@ -10,9 +10,9 @@ Models must be added to **both** the shared library and all callers.
 > | Vendor | File | Notes |
 > |---|---|---|
 > | NVIDIA | `scripts/lib/vllm_menu_nvidia.sh` | Pre-quantized AWQ/NVFP4/MXFP4 repos |
-> | AMD (RDNA4) | `scripts/lib/vllm_menu_amd.sh` | Online FP8 (`--quantization fp8`) on FP16 repos — no int4 kernels on ROCm |
+> | AMD (RDNA4, vLLM opt-in) | `scripts/lib/vllm_menu_amd.sh` | Online FP8 (`--quantization fp8`) on FP16 repos — Team opt-in via `TEAM_AMD_ENGINE=vllm` |
 > | Intel (XPU) | `scripts/lib/vllm_menu_intel.sh` | FP16 only — no AWQ/GPTQ/bf16 on XPU |
-> | AMD Personal (llama.cpp) | `scripts/lib/llama_menu_amd.sh` | GGUF `repo:quant` IDs |
+> | AMD Personal + Team (llama.cpp, default) | `scripts/lib/llama_menu_amd.sh` | GGUF `repo:quant` IDs |
 >
 > The benchmark suite enumerates all of these through `scripts/list_models.sh`
 > (a versioned TSV manifest) — as long as you follow the checklist below, new
@@ -105,14 +105,14 @@ These files read `MENU_MAX` dynamically, so **no range update needed** — but v
 
 ---
 
-## llama.cpp (Personal LLM — AMD)
+## llama.cpp (Personal + Team LLM — AMD)
 
 **File:** `scripts/lib/llama_menu_amd.sh` → `show_llama_model_menu()` / `select_llama_model()`
 
 - [ ] Same menu/`MENU_MAX` pattern as above
 - [ ] `LLAMA_MODEL_ID` is a HuggingFace GGUF `repo:quant` (e.g. `unsloth/Qwen3.6-27B-GGUF:Q4_K_M`)
 - [ ] `LLAMA_MODEL_SIZE_GB` — GGUF footprint (Q4_K_M ≈ 0.6 GB/B params, Q8_0 ≈ 1.06)
-- [ ] Context is auto-sized by `recommend_llama_context()` — no per-model value needed
+- [ ] Context is auto-sized by `recommend_llama_context()` — no per-model value needed (slots scale with GPU count; Team floors per-slot context at 16K via `LLAMA_MIN_CTX_PER_SLOT`)
 
 ---
 

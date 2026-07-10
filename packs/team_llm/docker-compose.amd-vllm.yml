@@ -1,0 +1,20 @@
+# AMD ROCm GPU access for team_llm — OPT-IN vLLM engine (TEAM_AMD_ENGINE=vllm).
+# The DEFAULT AMD team engine is llama.cpp (docker-compose.amd.yml); this override keeps
+# the vLLM FP8 path available for precision-sensitive deployments. Layered over
+# docker-compose.yml by install.sh when TEAM_AMD_ENGINE=vllm.
+# AMD has no default container runtime, so the ROCm vLLM image needs the kfd + render
+# nodes explicitly or it can't see the GPU ("Failed to infer device type").
+services:
+  inference:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      # P2P toggle. Default 1 = disabled (pipeline-parallel path; no peer link → no RCCL
+      # all-reduce hang on stock PCIe-no-XGMI boxes). For real tensor parallel on a host
+      # with working GPU P2P, the menu writes NCCL_P2P_DISABLE=0 (VLLM_PARALLEL_MODE=tp).
+      - NCCL_P2P_DISABLE=${NCCL_P2P_DISABLE:-1}

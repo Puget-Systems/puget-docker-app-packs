@@ -36,7 +36,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 ### 4. Team LLM
 *   **Target**: Production Multi-User Inference
-*   **Engine**: vLLM (multi-GPU tensor parallelism, OpenAI-compatible API)
+*   **Engine**: vLLM on NVIDIA/Intel; **llama.cpp** (layer-split GGUF) on AMD — vLLM FP8 available via `TEAM_AMD_ENGINE=vllm` (all OpenAI-compatible API)
 *   **Interface**: Open WebUI
 *   **Models**: Qwen 3.6 (35B MoE, 27B Dense), Qwen 3.5 MoE (35B, 122B), DeepSeek R1 70B, Nemotron 3 (Nano/Super NVFP4), GPT-OSS (20B/120B), Gemma 4 26B. The exact menu is vendor-specific (NVIDIA pre-quantized AWQ/NVFP4, AMD online FP8, Intel FP16) and VRAM-gated on your hardware.
 *   **Best For**: Shared workstations, teams needing a single high-throughput endpoint
@@ -140,7 +140,7 @@ scripts/update_checksum.sh
 │   ├── docker-base/           # Ubuntu 24.04 LTS Foundation
 │   ├── comfy_ui/              # Creative Stack (CUDA + ComfyUI)
 │   ├── personal_llm/          # Personal LLM (Ollama + Open WebUI)
-│   └── team_llm/              # Team LLM (vLLM + Open WebUI)
+│   └── team_llm/              # Team LLM (vLLM / llama.cpp on AMD + Open WebUI)
 ├── scripts/
 │   ├── update_checksum.sh     # Regenerate install.sh.md5
 │   └── lib/                   # Shared installer helpers

@@ -1,8 +1,8 @@
 # AMD ROCm Personal LLM — runs llama.cpp (llama-server), NOT Ollama.
-# llama.cpp's HIP split (--split-mode row) runs both R9700s per token with no RCCL — ~2x
-# Ollama's layer-split path — and serves an OpenAI-compatible API on :8000. This override
-# replaces the engine (image + entrypoint + command + port) and repoints the UI/brain from
-# the Ollama API (:11434) to the OpenAI API (:8000). Team LLM stays on vLLM.
+# llama.cpp splits multi-GPU work over direct HIP transfers (no RCCL, which is broken on
+# RDNA4) and serves an OpenAI-compatible API on :8000. This override replaces the engine
+# (image + entrypoint + command + port) and repoints the UI/brain from the Ollama API
+# (:11434) to the OpenAI API (:8000). Team LLM on AMD runs the same engine (see team_llm).
 # MODEL_ID / MAX_CONTEXT / LLAMA_PARALLEL / LLAMA_IMAGE come from .env (written by init.sh).
 services:
   inference:
@@ -13,20 +13,20 @@ services:
       - "${MODEL_ID:-unsloth/Qwen3.6-27B-GGUF:Q4_K_M}"
       - "-ngl"
       - "99"
-      # GPU split. Default "row" (real cross-GPU tensor split): ~2x speed AND both cards' VRAM
-      # for context. row SEGFAULTS under CONCURRENT batched decode on RDNA4 ROCm, but the
-      # single slot below (--parallel 1) serializes requests so that never happens — verified
-      # stable under 4 simultaneous requests. For true parallel decode instead of queueing,
-      # override .env: LLAMA_SPLIT_MODE=layer + LLAMA_PARALLEL=2 (sequential, ~half speed).
+      # GPU split. Default LAYER (benchmarked 2026-07-09, dual R9700): matches row-split at
+      # concurrency 1 (23.4 tok/s on Qwen3.6-27B Q4), beats it at concurrency 4 (55.7 tok/s),
+      # and is crash-safe under concurrent decode. ROW aborts on Qwen3.6-family models under
+      # concurrent decode (GGML_ASSERT broadcast shapes) — single-stream/per-architecture use
+      # only. init.sh writes "none" on single-GPU boxes (nothing to split).
       - "--split-mode"
-      - "${LLAMA_SPLIT_MODE:-row}"
+      - "${LLAMA_SPLIT_MODE:-layer}"
       - "-fa"
       - "on"
       # Vision (mmproj) left ENABLED — verified harmless. Multimodal GGUFs get image input free.
-      # One slot: a 2nd simultaneous request queues (~waits) rather than decoding concurrently
-      # (which is what crashes row-split). -c is undivided → the full context pool per request.
+      # Slots scale with GPU count (init.sh writes 2×GPUs, clamped [2,8]); llama.cpp divides
+      # -c evenly across slots, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL.
       - "--parallel"
-      - "${LLAMA_PARALLEL:-1}"
+      - "${LLAMA_PARALLEL:-2}"
       - "-c"
       - "${MAX_CONTEXT:-32768}"
       - "--host"

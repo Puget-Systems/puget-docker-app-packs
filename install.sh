@@ -140,10 +140,17 @@ echo ""
 # Check for GPU Drivers and Runtimes
 detect_gpus || true
 
-# Engine label for user-facing messages. Team LLM runs vLLM on every vendor (AMD uses
-# online FP8 quant — the int4 path has no WNA16 kernel on ROCm). Personal LLM's engine
-# (Ollama, or llama.cpp on AMD) is messaged from its own pack init.
-infer_engine_label() { echo "vLLM"; }
+# Engine label for user-facing messages. Team LLM runs vLLM on NVIDIA/Intel; on AMD the
+# default is llama.cpp (layer-split GGUF — see llama_menu_amd.sh) with vLLM FP8 as the
+# opt-in TEAM_AMD_ENGINE=vllm path. Personal LLM's engine (Ollama, or llama.cpp on AMD)
+# is messaged from its own pack init.
+infer_engine_label() {
+    if [ "${GPU_VENDOR:-}" = "amd" ] && [ "${TEAM_AMD_ENGINE:-llama}" != "vllm" ]; then
+        echo "llama.cpp"
+    else
+        echo "vLLM"
+    fi
+}
 
 if [ "$GPU_VENDOR" == "amd" ]; then
     echo -e "${GREEN}✓ AMD GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
@@ -798,6 +805,41 @@ case $FLAVOR in
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
         fi
         echo ""
+        # AMD Team default engine is llama.cpp (layer-split GGUF): benchmarked 2026-07-09
+        # on dual R9700 it is 2.1× vLLM FP16 PP=2 single-user (23.4 vs 10.9 tok/s on
+        # Qwen3.6-27B) and ~5× at concurrency 8 (56 tok/s aggregate). vLLM FP8 stays as an
+        # opt-in escape hatch: TEAM_AMD_ENGINE=vllm ./install.sh, or the menu entry below.
+        # Like personal_llm, MODEL_ID must be in .env BEFORE launch (llama-server downloads
+        # via -hf at startup); the AMD compose override reads the LLAMA_* vars.
+        TEAM_AMD_ENGINE="${TEAM_AMD_ENGINE:-llama}"
+        if [ "${GPU_VENDOR:-}" = "amd" ] && [ "$TEAM_AMD_ENGINE" != "vllm" ]; then
+            echo -e "${YELLOW}Select a model to serve:${NC}"
+            echo ""
+            LLAMA_MIN_CTX_PER_SLOT=16384   # team tool use needs a bigger per-request window
+            show_llama_model_menu
+            echo "  $((MENU_MAX+1))) Advanced: use the vLLM (FP8) engine instead of llama.cpp"
+            echo ""
+            read -p "Select [1-$((MENU_MAX+1))]: " LL_CHOICE
+            if [ "$LL_CHOICE" = "$((MENU_MAX+1))" ]; then
+                TEAM_AMD_ENGINE="vllm"
+            else
+                LL_RC=0
+                select_llama_model "$LL_CHOICE" || LL_RC=$?
+                write_env_var "TEAM_AMD_ENGINE" "llama" "$INSTALL_DIR/.env"
+                if [ "$LL_RC" -eq 0 ] && [ -n "${LLAMA_MODEL_ID:-}" ]; then
+                    write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" "$INSTALL_DIR/.env"
+                    write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" "$INSTALL_DIR/.env"
+                    write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-4}" "$INSTALL_DIR/.env"
+                    write_env_var "LLAMA_SPLIT_MODE" "${LLAMA_SPLIT_MODE:-layer}" "$INSTALL_DIR/.env"
+                    write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" "$INSTALL_DIR/.env"
+                    echo -e "${GREEN}  ✓ ${LLAMA_MODEL_ID} (ctx ${LLAMA_MAX_CTX} total, ${LLAMA_PARALLEL:-4} slots → $((LLAMA_MAX_CTX / ${LLAMA_PARALLEL:-4}))/request, split=${LLAMA_SPLIT_MODE:-layer}) → .env${NC}"
+                else
+                    echo -e "${YELLOW}  No model selected — set MODEL_ID in .env before launch.${NC}"
+                fi
+            fi
+        fi
+        if [ "${GPU_VENDOR:-}" != "amd" ] || [ "$TEAM_AMD_ENGINE" = "vllm" ]; then
+        [ "${GPU_VENDOR:-}" = "amd" ] && write_env_var "TEAM_AMD_ENGINE" "vllm" "$INSTALL_DIR/.env"
         # Model Selection (uses shared library)
         echo -e "${YELLOW}Select a model to serve:${NC}"
         echo ""
@@ -858,6 +900,7 @@ case $FLAVOR in
         else
             echo "Skipping model configuration. Edit .env before starting."
         fi
+        fi
         ;;
     docker-base)
         echo "Base environment ready for Python development."
@@ -884,10 +927,16 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     # NOTE: cwd is already "$INSTALL_DIR" (we cd'd above) and INSTALL_DIR may be RELATIVE
     # (e.g. "team_llm"), so reference the override + .env relative to cwd — prepending
     # "$INSTALL_DIR/" here would double the path ("team_llm/team_llm/...") and silently skip.
-    if [ -n "${GPU_VENDOR:-}" ] && [ -f "docker-compose.${GPU_VENDOR}.yml" ]; then
-        write_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.${GPU_VENDOR}.yml" ".env"
-        export COMPOSE_FILE="docker-compose.yml:docker-compose.${GPU_VENDOR}.yml"
-        echo -e "${BLUE}GPU profile: ${GPU_VENDOR} (compose override: docker-compose.${GPU_VENDOR}.yml)${NC}"
+    _GPU_OVERRIDE="docker-compose.${GPU_VENDOR:-none}.yml"
+    # Team AMD with the opt-in vLLM engine uses its own override (the default
+    # docker-compose.amd.yml is the llama.cpp engine swap).
+    if [ "$FLAVOR" = "team_llm" ] && [ "${GPU_VENDOR:-}" = "amd" ] && [ "${TEAM_AMD_ENGINE:-llama}" = "vllm" ]; then
+        _GPU_OVERRIDE="docker-compose.amd-vllm.yml"
+    fi
+    if [ -n "${GPU_VENDOR:-}" ] && [ -f "$_GPU_OVERRIDE" ]; then
+        write_env_var "COMPOSE_FILE" "docker-compose.yml:${_GPU_OVERRIDE}" ".env"
+        export COMPOSE_FILE="docker-compose.yml:${_GPU_OVERRIDE}"
+        echo -e "${BLUE}GPU profile: ${GPU_VENDOR} (compose override: ${_GPU_OVERRIDE})${NC}"
     fi
 
     # Validate .env before launch — catch stacking/corruption early
@@ -997,12 +1046,13 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 echo -e "  Network:  ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
                 
-                # Wait for model download and loading with progress
-                if [ -n "$VLLM_MODEL_ID" ]; then
+                # Wait for model download and loading with progress (vLLM or the AMD
+                # llama.cpp engine — same container name, same :8000 OpenAI API).
+                if [ -n "${VLLM_MODEL_ID:-}" ] || [ -n "${LLAMA_MODEL_ID:-}" ]; then
                     echo -e "${YELLOW}Waiting for model to download and load...${NC}"
                     echo "  (This may take 5-30 minutes depending on model size and bandwidth)"
                     echo ""
-                    wait_for_vllm "puget_vllm" "$VLLM_MODEL_SIZE_GB"
+                    wait_for_vllm "puget_vllm" "${VLLM_MODEL_SIZE_GB:-${LLAMA_MODEL_SIZE_GB:-0}}"
                 fi
                 
                 echo -e "  Re-configure model: ${BLUE}./init.sh${NC}"

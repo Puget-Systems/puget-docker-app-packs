@@ -1,15 +1,18 @@
 #!/bin/bash
-# Puget Systems — AMD (RDNA4 / R9700) Personal LLM menu — LLAMA.CPP engine.
+# Puget Systems — AMD (RDNA4 / R9700) LLM menu — LLAMA.CPP engine (Personal AND Team).
 #
-# Personal LLM runs llama.cpp (llama-server) on AMD instead of Ollama: llama.cpp's HIP
-# split (--split-mode row) runs BOTH GPUs per token with no RCCL (~2x Ollama's layer-split
-# path), and it's a great fit for a single-user box. Team LLM stays on vLLM (FP8) — its
-# dynamic concurrency matters more there than raw speed; llama.cpp's static slots and
-# tool-loop fragility are acceptable for Personal.
+# llama.cpp (llama-server) is the default AMD engine for BOTH packs. Multi-GPU work goes
+# over direct HIP transfers (no RCCL, which deadlocks/fails on RDNA4), and --split-mode
+# LAYER is the default: benchmarked 2026-07-09 on dual R9700 it matches row-split at
+# concurrency 1 (23.4 tok/s, Qwen3.6-27B Q4_K_M), beats it at concurrency 4 (55.7 tok/s),
+# and is crash-safe under concurrent decode — vs vLLM FP16 PP=2 at 10.9 tok/s on the same
+# model. Team's vLLM FP8 path survives as an opt-in override (TEAM_AMD_ENGINE=vllm).
 #
-# Models are GGUF (already-quantized, small downloads). The personal_llm AMD compose
-# override runs:  llama-server -hf $MODEL_ID -ngl 99 --split-mode row -fa on
-#                              --parallel $LLAMA_PARALLEL -c $MAX_CONTEXT ...
+# Models are GGUF (already-quantized, small downloads). The AMD compose overrides run:
+#   llama-server -hf $MODEL_ID -ngl 99 --split-mode $LLAMA_SPLIT_MODE -fa on
+#                --parallel $LLAMA_PARALLEL -c $MAX_CONTEXT ...
+# Pack profile knob (set before calling select_llama_model):
+#   LLAMA_MIN_CTX_PER_SLOT — per-request context floor (Personal 8192 default; Team 16384).
 # Source only; sets LLAMA_* output vars.
 
 show_llama_model_menu() {
@@ -47,29 +50,46 @@ show_llama_model_menu() {
         echo -e "  6) Qwen 3.6 27B (Q8_0)        - ${RED}Requires ~32 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
     echo "  7) Qwen 3.5 9B (Q4_K_M)       - Small & fast (~6 GB)"
-    echo "  8) Custom GGUF (advanced)     - Enter any HuggingFace GGUF repo:quant"
-    echo "  9) Skip / configure later"
-    MENU_MAX=9
+    if [ "$TOTAL_VRAM" -ge 18 ]; then
+        echo "  8) Gemma 3 27B (Q4_K_M)       - Google, multimodal (~17 GB)"
+    else
+        echo -e "  8) Gemma 3 27B (Q4_K_M)       - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+    if [ "$TOTAL_VRAM" -ge 46 ]; then
+        echo "  9) DeepSeek-R1 70B (Q4_K_M)   - Reasoning, Llama-distilled (~43 GB)"
+    else
+        echo -e "  9) DeepSeek-R1 70B (Q4_K_M)   - ${RED}Requires ~46 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+    echo "  10) Custom GGUF (advanced)    - Enter any HuggingFace GGUF repo:quant"
+    echo "  11) Skip / configure later"
+    MENU_MAX=11
 }
 
-# recommend_llama_context <weights_gb> [avail_vram_gb]
+# recommend_llama_context <weights_gb> [avail_vram_gb] [n_slots] [min_ctx_per_slot]
 #   Scale -c to the VRAM left after weights. KV stays fp16 (q8 KV degrades long-context
 #   attention → tool-loops); flash attention shrinks the compute buffer. fp16 KV for a
 #   Qwen3-class GQA model is ~0.25 GB / 1k tokens → ~3000 tokens/GB of headroom (reserving
-#   4 GB for buffers). avail_vram defaults to TOTAL_VRAM (layer/row = both GPUs); pass a
-#   single GPU's VRAM for --split-mode none. Sizes the TOTAL pool; --parallel N gives each
-#   slot (-c / N). Cap 131072, floor 8k.
+#   4 GB for buffers). avail_vram defaults to TOTAL_VRAM (layer = both GPUs); pass a
+#   single GPU's VRAM for --split-mode none. llama.cpp divides -c evenly across --parallel
+#   N slots (per-request ctx = -c / N), so the result is per-slot ctx × N: total capped at
+#   131072, per-slot floored at min_ctx_per_slot (default 8192) and rounded down to a
+#   1024-token boundary.
 recommend_llama_context() {
     local weight="${1:-1}"
     [ "${weight:-0}" -lt 1 ] 2>/dev/null && weight=1
     local avail="${2:-${TOTAL_VRAM:-0}}"
+    local slots="${3:-1}"
+    [ "${slots:-0}" -lt 1 ] 2>/dev/null && slots=1
+    local min_slot="${4:-8192}"
     local headroom=$(( avail - weight - 4 ))
     [ "$headroom" -lt 1 ] && headroom=1
     local ctx=$(( headroom * 3000 ))
     [ "$ctx" -gt 131072 ] && ctx=131072
-    [ "$ctx" -lt 8192 ]   && ctx=8192
-    ctx=$(( (ctx / 1024) * 1024 ))
-    echo "$ctx"
+    local per_slot=$(( ctx / slots ))
+    [ "$per_slot" -lt "$min_slot" ] && per_slot="$min_slot"
+    per_slot=$(( (per_slot / 1024) * 1024 ))
+    [ "$per_slot" -lt 4096 ] && per_slot=4096
+    echo $(( per_slot * slots ))
 }
 
 # select_llama_model <choice>
@@ -104,6 +124,12 @@ select_llama_model() {
         7)
             LLAMA_MODEL_ID="unsloth/Qwen3.5-9B-GGUF:Q4_K_M"; LLAMA_MODEL_SIZE_GB=6 ;;
         8)
+            [ "$TOTAL_VRAM" -lt 18 ] && { echo -e "${RED}✗ Gemma 3 27B Q4 needs ~18 GB.${NC}"; return 1; }
+            LLAMA_MODEL_ID="unsloth/gemma-3-27b-it-GGUF:Q4_K_M"; LLAMA_MODEL_SIZE_GB=17 ;;
+        9)
+            [ "$TOTAL_VRAM" -lt 46 ] && { echo -e "${RED}✗ DeepSeek-R1 70B Q4 needs ~46 GB (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
+            LLAMA_MODEL_ID="unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF:Q4_K_M"; LLAMA_MODEL_SIZE_GB=43 ;;
+        10)
             echo -e "${YELLOW}Custom GGUF — format owner/repo-GGUF:QUANT${NC}"
             echo "  e.g. unsloth/Qwen3.6-27B-GGUF:Q4_K_M"
             read -p "  Enter GGUF repo:quant (or Enter to skip): " CUSTOM_GGUF
@@ -113,17 +139,32 @@ select_llama_model() {
             return 2 ;;
     esac
 
-    # GPU split + concurrency. The catch on RDNA4 ROCm: --split-mode ROW (real cross-GPU
-    # tensor split, ~2x speed, both cards' VRAM) SEGFAULTS under *concurrent* batched decode
-    # — 2 simultaneous requests GP-fault the server. BUT with a SINGLE slot (--parallel 1),
-    # requests queue and run one-at-a-time, so the concurrent decode never happens — verified
-    # stable under 4 simultaneous requests. That keeps row's full speed AND the full both-card
-    # context pool (-c undivided), which is exactly right for a one-at-a-time WebUI workload.
-    # Trade-off: a 2nd simultaneous request WAITS (~8s) instead of running in parallel.
-    # Power users who need true parallel decode can override .env: LLAMA_SPLIT_MODE=layer
-    # (sequential, ~half speed, crash-safe) + LLAMA_PARALLEL=2.
-    LLAMA_SPLIT_MODE="row"
-    LLAMA_PARALLEL="1"
-    LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$TOTAL_VRAM")"
+    # GPU split (benchmarked 2026-07-09, dual R9700, Qwen3.6-27B Q4_K_M): LAYER split
+    # matches row-split at concurrency 1 (23.4 tok/s), beats it at concurrency 4
+    # (55.7 tok/s aggregate), and is crash-safe under concurrent decode. ROW split aborts
+    # on Qwen3.6-family models under concurrent decode (GGML_ASSERT(!(split && ne02 <
+    # ne12)) — its matmul path lacks those broadcast shapes) and segfaulted under
+    # concurrency on non-P2P platforms, so it is no longer a default. Power users can set
+    # LLAMA_SPLIT_MODE=row in .env for single-stream use — verify per model architecture
+    # first. Single GPU → "none" (nothing to split).
+    if [ "${GPU_COUNT:-1}" -le 1 ]; then
+        LLAMA_SPLIT_MODE="none"
+    else
+        LLAMA_SPLIT_MODE="layer"
+    fi
+
+    # Concurrency slots scale with the hardware: 2 per GPU, clamped to [2, 8] (measured:
+    # dual R9700 throughput rises to concurrency 4 and plateaus by 8). llama.cpp divides
+    # -c evenly across slots (per-request ctx = -c / N), so on tight-VRAM boxes we shed
+    # slots until each keeps at least LLAMA_MIN_CTX_PER_SLOT.
+    LLAMA_PARALLEL=$(( 2 * ${GPU_COUNT:-1} ))
+    [ "$LLAMA_PARALLEL" -lt 2 ] && LLAMA_PARALLEL=2
+    [ "$LLAMA_PARALLEL" -gt 8 ] && LLAMA_PARALLEL=8
+    local min_slot="${LLAMA_MIN_CTX_PER_SLOT:-8192}"
+    local headroom_ctx=$(( (TOTAL_VRAM - LLAMA_MODEL_SIZE_GB - 4) * 3000 ))
+    while [ "$LLAMA_PARALLEL" -gt 1 ] && [ $(( headroom_ctx / LLAMA_PARALLEL )) -lt "$min_slot" ]; do
+        LLAMA_PARALLEL=$(( LLAMA_PARALLEL - 1 ))
+    done
+    LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$TOTAL_VRAM" "$LLAMA_PARALLEL" "$min_slot")"
     return 0
 }
