@@ -53,6 +53,7 @@ services:
         ${REASONING_ARGS:-}
         ${THINKING_ARGS:-}
         ${TOOL_CALL_ARGS:-}
+        ${VLLM_ENABLE_MTP:+--speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'}
         ${EXTRA_VLLM_ARGS:-}
 
   # 2. User Interface (Open WebUI)

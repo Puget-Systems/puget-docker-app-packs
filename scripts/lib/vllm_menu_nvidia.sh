@@ -58,9 +58,15 @@ show_vllm_model_menu() {
         echo -e " 10) GPT-OSS (120B MoE MXFP4)   - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo " 11) Custom                      - Enter a HuggingFace model ID"
-    echo " 12) Skip                        - I'll configure via .env later"
-    MENU_MAX=12
+    if [ "$TOTAL_VRAM" -ge 20 ]; then
+        echo " 11) Qwen 3.6 (27B NVFP4)       - Blackwell FP4 + MTP spec-decode, ~4-5x faster (~14 GB) [New]"
+    else
+        echo -e " 11) Qwen 3.6 (27B NVFP4)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 12) Custom                      - Enter a HuggingFace model ID"
+    echo " 13) Skip                        - I'll configure via .env later"
+    MENU_MAX=13
 }
 
 # select_vllm_model <choice>
@@ -82,6 +88,7 @@ select_vllm_model() {
     VLLM_REASONING_ARGS=""
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS=""
+    VLLM_ENABLE_MTP=""
     VLLM_DTYPE="auto"
     VLLM_IMAGE="vllm/vllm-openai:v0.20.2"
     VLLM_MAX_CTX=""
@@ -191,6 +198,26 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser openai"
             ;;
         11)
+            # Qwen 3.6 27B NVFP4 (unsloth) — Blackwell FP4 tensor-core quant + MTP
+            # speculative decoding. Benchmarked 2026-07-12 on DGX Spark (GB10, sm_121):
+            # 22.4 / 78.1 / 133.6 tok/s at conc 1/4/8 = ~4-5x the FP16 27B baseline
+            # (4.5 / 17.3 / 32.4), in ~14 GB vs ~54 GB. NVFP4 (compressed-tensors) needs
+            # vLLM >=0.25.0 for the FlashInfer-Cutlass FP4 kernel on sm_120/sm_121, so this
+            # entry PINS v0.25.0 rather than riding ${NIGHTLY_PREFIX} (which is older and
+            # lacks the kernel). VLLM_ENABLE_MTP switches on the MTP draft (the compose
+            # injects --speculative-config); speculative decoding is lossless. No eager
+            # mode — CUDA graphs are part of the speedup.
+            if [ "$TOTAL_VRAM" -lt 20 ]; then
+                echo -e "${RED}✗ Qwen 3.6 27B NVFP4 requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="unsloth/Qwen3.6-27B-NVFP4"; VLLM_MODEL_SIZE_GB=14
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_ENABLE_MTP="1"
+            VLLM_IMAGE="vllm/vllm-openai:v0.25.0"
+            ;;
+        12)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then

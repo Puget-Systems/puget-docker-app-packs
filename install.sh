@@ -871,6 +871,7 @@ case $FLAVOR in
             write_env_var "REASONING_ARGS" "$VLLM_REASONING_ARGS" "$INSTALL_DIR/.env"
             write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" "$INSTALL_DIR/.env"
             write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
+            write_env_var "VLLM_ENABLE_MTP" "$VLLM_ENABLE_MTP" "$INSTALL_DIR/.env"
             write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
             write_env_var "NCCL_P2P_DISABLE" "${VLLM_NCCL_P2P_DISABLE:-1}" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"

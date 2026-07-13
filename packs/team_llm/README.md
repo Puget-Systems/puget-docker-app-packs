@@ -62,7 +62,10 @@ The `init.sh` wizard offers these pre-configured options:
 | 7 | Gemma 4 (26B MoE AWQ) | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~18 GB | auto | 3.8B active, 256K context capable |
 | 8 | GPT-OSS (20B MoE MXFP4) | `openai/gpt-oss-20b` | ~16 GB | auto | OpenAI open-weight, Apache 2.0 |
 | 9 | GPT-OSS (120B MoE MXFP4) | `openai/gpt-oss-120b` | ~80 GB | auto | OpenAI flagship open-weight, Apache 2.0 |
-| 10 | Custom | User-specified | Varies | — | Any HuggingFace model ID |
+| 10 | Qwen 3.6 (27B NVFP4) | `unsloth/Qwen3.6-27B-NVFP4` | ~14 GB | auto | **Blackwell only.** FP4 tensor cores + MTP speculative decode; ~4–5× the FP16 27B on DGX Spark (22/78/134 tok/s @ conc 1/4/8). Pins vLLM `v0.25.0`. |
+| 11 | Custom | User-specified | Varies | — | Any HuggingFace model ID |
+
+> **NVFP4 (entry 11) is Blackwell-specific.** It needs vLLM ≥ 0.25.0 for the FlashInfer-Cutlass FP4 kernel on `sm_120`/`sm_121` (RTX 50-series, DGX Spark/GB10, B200), so the menu pins `vllm/vllm-openai:v0.25.0` instead of the rolling nightly. MTP speculative decoding (lossless) is switched on via `VLLM_ENABLE_MTP=1`, which makes the compose inject `--speculative-config`. On pre-Blackwell GPUs vLLM falls back to a slower Marlin path — use an AWQ entry there instead.
 
 ## Thinking Preservation (Qwen 3.6)
 
