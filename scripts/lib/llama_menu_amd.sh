@@ -68,9 +68,19 @@ show_llama_model_menu() {
     else
         echo -e "  9) DeepSeek-R1 70B (Q4_K_M)   - ${RED}Requires ~46 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
-    echo "  10) Custom GGUF (advanced)    - Enter any HuggingFace GGUF repo:quant"
-    echo "  11) Skip / configure later"
-    MENU_MAX=11
+    if [ "$TOTAL_VRAM" -ge 18 ]; then
+        echo "  10) Qwen 3.8 27B (Q4_K_M)     - Dense, hybrid-attention, vision (~17 GB) [New]"
+    else
+        echo -e "  10) Qwen 3.8 27B (Q4_K_M)     - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+    if [ "$TOTAL_VRAM" -ge 32 ]; then
+        echo "  11) Qwen 3.8 27B (Q8_0)       - Dense, higher quality (~30 GB)"
+    else
+        echo -e "  11) Qwen 3.8 27B (Q8_0)       - ${RED}Requires ~32 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+    echo "  12) Custom GGUF (advanced)    - Enter any HuggingFace GGUF repo:quant"
+    echo "  13) Skip / configure later"
+    MENU_MAX=13
 }
 
 # recommend_llama_context <weights_gb> [avail_vram_gb] [n_slots] [min_ctx_per_slot]
@@ -138,6 +148,15 @@ select_llama_model() {
             [ "$TOTAL_VRAM" -lt 46 ] && { echo -e "${RED}✗ DeepSeek-R1 70B Q4 needs ~46 GB (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
             LLAMA_MODEL_ID="unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF:Q4_K_M"; LLAMA_MODEL_SIZE_GB=43 ;;
         10)
+            # Qwen3.8 is hybrid-attention (48/64 linear layers) — needs a llama-server
+            # image from 2026-08-14 or later; `docker compose pull` if the rolling
+            # server-rocm tag was cached before then.
+            [ "$TOTAL_VRAM" -lt 18 ] && { echo -e "${RED}✗ Qwen 3.8 27B Q4 needs ~18 GB.${NC}"; return 1; }
+            LLAMA_MODEL_ID="unsloth/Qwen3.8-27B-GGUF:Q4_K_M"; LLAMA_MODEL_SIZE_GB=17 ;;
+        11)
+            [ "$TOTAL_VRAM" -lt 32 ] && { echo -e "${RED}✗ Qwen 3.8 27B Q8 needs ~32 GB.${NC}"; return 1; }
+            LLAMA_MODEL_ID="unsloth/Qwen3.8-27B-GGUF:Q8_0"; LLAMA_MODEL_SIZE_GB=30 ;;
+        12)
             echo -e "${YELLOW}Custom GGUF — format owner/repo-GGUF:QUANT${NC}"
             echo "  e.g. unsloth/Qwen3.6-27B-GGUF:Q4_K_M"
             read -p "  Enter GGUF repo:quant (or Enter to skip): " CUSTOM_GGUF

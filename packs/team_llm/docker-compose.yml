@@ -40,7 +40,11 @@ services:
     ipc: host
     entrypoint: ["/bin/bash", "-c"]
     command:
+      # VLLM_EXTRA_PIP: in-container dependency floor for models whose arch needs a
+      # newer library than the image ships (e.g. Qwen3.8 needs transformers>=5.8.0).
+      # Empty for every other model, so this expands to nothing and adds no startup cost.
       - >
+        ${VLLM_EXTRA_PIP:+pip install --no-cache-dir '${VLLM_EXTRA_PIP}' &&}
         exec python3 -m vllm.entrypoints.openai.api_server
         --model=${MODEL_ID:-Qwen/Qwen3-8B}
         --tensor-parallel-size=${GPU_COUNT:-1}

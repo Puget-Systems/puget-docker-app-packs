@@ -64,9 +64,15 @@ show_vllm_model_menu() {
         echo -e " 11) Qwen 3.6 (27B NVFP4)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo " 12) Custom                      - Enter a HuggingFace model ID"
-    echo " 13) Skip                        - I'll configure via .env later"
-    MENU_MAX=13
+    if [ "$TOTAL_VRAM" -ge 20 ]; then
+        echo " 12) Qwen 3.8 (27B NVFP4)       - Blackwell FP4 + MTP, hybrid attn, 262K ctx (~16 GB) [New]"
+    else
+        echo -e " 12) Qwen 3.8 (27B NVFP4)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 13) Custom                      - Enter a HuggingFace model ID"
+    echo " 14) Skip                        - I'll configure via .env later"
+    MENU_MAX=14
 }
 
 # select_vllm_model <choice>
@@ -89,6 +95,7 @@ select_vllm_model() {
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS=""
     VLLM_ENABLE_MTP=""
+    VLLM_EXTRA_PIP=""
     VLLM_DTYPE="auto"
     VLLM_IMAGE="vllm/vllm-openai:v0.20.2"
     VLLM_MAX_CTX=""
@@ -218,6 +225,53 @@ select_vllm_model() {
             VLLM_IMAGE="vllm/vllm-openai:v0.25.0"
             ;;
         12)
+            # Qwen 3.8 27B NVFP4 (unsloth) — successor to choice 11. Two things differ
+            # from the 3.6 NVFP4 entry and both drive the config below:
+            #
+            # 1. ARCH: hybrid attention (linear attention on 48 of 64 layers, full on 16)
+            #    plus a vision tower. That arch landed in vLLM main AFTER the v0.27.1
+            #    stable cut (2026-08-11) — the model published 2026-08-14 — so this entry
+            #    rides ${NIGHTLY_PREFIX} instead of pinning a release tag. Do NOT "fix"
+            #    this to a stable pin until a release ships the arch; a stable image
+            #    fails at load with an unrecognized model type.
+            # 2. TRANSFORMERS: needs >=5.8.0. VLLM_EXTRA_PIP makes the compose upgrade it
+            #    in-container before serving (no-op for every other entry, which leave it
+            #    empty). Drop it once the nightly image ships that floor on its own.
+            #
+            # NVFP4 GEMM kernels are sm_120+ only (FlashInfer-Cutlass), so this gates on
+            # compute capability as well as VRAM — on pre-Blackwell the weights load and
+            # then fail in the kernel selector, which is a confusing way to find out.
+            # MTP draft head is built into the checkpoint (compose injects
+            # --speculative-config); speculative decoding is lossless. No eager mode —
+            # CUDA graphs are part of the speedup. If a single 24 GB card OOMs during
+            # graph capture, add --enforce-eager via EXTRA_VLLM_ARGS in .env, and
+            # --kv-cache-dtype fp8 is the lever for pushing past the context set here.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 12 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.8 27B NVFP4 needs a Blackwell GPU (compute 12.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                echo -e "  ${YELLOW}Use choice 2 (Qwen 3.6 27B AWQ) on this hardware.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 20 ]; then
+                echo -e "${RED}✗ Qwen 3.8 27B NVFP4 requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="unsloth/Qwen3.8-27B-NVFP4"; VLLM_MODEL_SIZE_GB=16
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_ENABLE_MTP="1"
+            VLLM_EXTRA_PIP="transformers>=5.8.0"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            # KV cache is fp16 here, so context is sized to what's left after weights
+            # rather than the model's native 262K.
+            if [ "$TOTAL_VRAM" -ge 48 ]; then
+                VLLM_MAX_CTX="262144"
+            elif [ "$TOTAL_VRAM" -ge 32 ]; then
+                VLLM_MAX_CTX="131072"
+            else
+                VLLM_MAX_CTX="65536"
+            fi
+            ;;
+        13)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then

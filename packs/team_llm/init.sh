@@ -128,6 +128,7 @@ else
     write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" ".env"
     write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" ".env"
     write_env_var "VLLM_ENABLE_MTP" "${VLLM_ENABLE_MTP:-}" ".env"
+    write_env_var "VLLM_EXTRA_PIP" "${VLLM_EXTRA_PIP:-}" ".env"
     write_env_var "DTYPE" "$VLLM_DTYPE" ".env"
     write_env_var "NCCL_P2P_DISABLE" "${VLLM_NCCL_P2P_DISABLE:-1}" ".env"
     if [ "${GPU_VENDOR:-}" = "amd" ]; then

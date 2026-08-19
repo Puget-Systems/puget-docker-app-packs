@@ -56,6 +56,7 @@ select_vllm_model() {
     VLLM_REASONING_ARGS=""
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS="$XPU_ARGS"
+    VLLM_EXTRA_PIP=""
     VLLM_DTYPE="float16"     # XPU cannot serve bfloat16
     if [ "$GPU_VENDOR" == "intel" ]; then
         VLLM_IMAGE="puget-vllm-xpu:b70"   # built from Dockerfile.xpu (LLM Scaler + patch)

@@ -89,6 +89,7 @@ select_vllm_model() {
     VLLM_REASONING_ARGS=""
     VLLM_THINKING_ARGS=""
     VLLM_EXTRA_ARGS=""
+    VLLM_EXTRA_PIP=""
     VLLM_DTYPE="float16"
     VLLM_NCCL_P2P_DISABLE="1"   # PP default disables P2P; TP mode flips this to 0
 
