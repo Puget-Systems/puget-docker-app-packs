@@ -52,7 +52,10 @@ Models must be added to **both** the shared library and all callers.
 **File:** `packs/team_llm/docker-compose.yml`
 
 - [ ] Does the model need a newer `transformers` version than what ships in the vLLM image?
-  - If yes: add conditional pip upgrade in the `command:` block
+  - If yes: set `VLLM_EXTRA_PIP` in the menu entry (e.g. `transformers>=5.8.0`).
+    The compose `command:` upgrades it in-container before serving; it is empty
+    for every other model, so nothing else pays the cost. Clear it again once
+    the image ships that floor on its own.
 - [ ] Does the model need `trust-remote-code`? (Already enabled globally)
 - [ ] Does the model need special quantization support? (e.g., NVFP4 → nightly only)
 
