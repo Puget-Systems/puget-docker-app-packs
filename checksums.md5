@@ -4,13 +4,13 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 e9342f2ab90f6238959ac4e5d9d16a1d  ./packs/team_llm/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
 4147a673ac8b7a8291501490d01e5164  ./scripts/lib/env_write.sh
-a47c08a608755e7f9d6c64ea011f4b2d  ./scripts/lib/gpu_detect.sh
+36135ce0f35d8357e4b65272e1cba1bd  ./scripts/lib/gpu_detect.sh
 b4e756fe8e84f8630c16e62f6d898f6b  ./scripts/lib/llama_menu_amd.sh
 d5099925571762201ba5ab887d002784  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 814f58fc072a6494f52f3620de637fe5  ./scripts/lib/vllm_menu_amd.sh
 58d17bd7cd0d7a237459acca409fbb95  ./scripts/lib/vllm_menu_intel.sh
-edafecb88ea30eec7dc1990b994fd09d  ./scripts/lib/vllm_menu_nvidia.sh
+d6a9046a5680bf3526b6a83a8eed6357  ./scripts/lib/vllm_menu_nvidia.sh
 a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh
 bd4d69332993a2eb292c99418757057b  ./scripts/lib/vllm_monitor.sh
 22195389bc8d35cb78f01987eeeaa307  ./scripts/list_models.sh

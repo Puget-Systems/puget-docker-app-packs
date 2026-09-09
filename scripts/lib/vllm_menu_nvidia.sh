@@ -70,9 +70,27 @@ show_vllm_model_menu() {
         echo -e " 12) Qwen 3.8 (27B NVFP4)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo " 13) Custom                      - Enter a HuggingFace model ID"
-    echo " 14) Skip                        - I'll configure via .env later"
-    MENU_MAX=14
+    if [ "$TOTAL_VRAM" -ge 24 ]; then
+        echo " 13) GLM 4.7 Flash (AWQ 4-bit)  - Zhipu MoE, thinking model (~20 GB) [New]"
+    else
+        echo -e " 13) GLM 4.7 Flash (AWQ 4-bit)  - ${RED}Requires ~24 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 260 ]; then
+        echo " 14) GLM 4.7 (355B MoE NVFP4)   - Flagship, NVIDIA first-party FP4 (~230 GB) [New]"
+    else
+        echo -e " 14) GLM 4.7 (355B MoE NVFP4)   - ${RED}Requires ~260 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 150 ]; then
+        echo " 15) Qwen 3 (235B MoE NVFP4)    - 22B active, NVIDIA first-party FP4 (~134 GB) [New]"
+    else
+        echo -e " 15) Qwen 3 (235B MoE NVFP4)    - ${RED}Requires ~150 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 16) Custom                      - Enter a HuggingFace model ID"
+    echo " 17) Skip                        - I'll configure via .env later"
+    MENU_MAX=17
 }
 
 # select_vllm_model <choice>
@@ -246,8 +264,11 @@ select_vllm_model() {
             # CUDA graphs are part of the speedup. If a single 24 GB card OOMs during
             # graph capture, add --enforce-eager via EXTRA_VLLM_ARGS in .env, and
             # --kv-cache-dtype fp8 is the lever for pushing past the context set here.
-            if [ "${COMPUTE_MAJOR:-0}" -lt 12 ] 2>/dev/null; then
-                echo -e "${RED}✗ Qwen 3.8 27B NVFP4 needs a Blackwell GPU (compute 12.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+            # Blackwell is 10.x (datacenter: B200/GB200 sm_100, GB300 sm_103) OR
+            # 12.x (consumer/workstation: sm_120/sm_121). Gate on >= 10, not >= 12 —
+            # the old test rejected NVFP4 on GB200/GB300, the hardware best suited to it.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.8 27B NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
                 echo -e "  ${YELLOW}Use choice 2 (Qwen 3.6 27B AWQ) on this hardware.${NC}"
                 return 1
             fi
@@ -272,6 +293,62 @@ select_vllm_model() {
             fi
             ;;
         13)
+            # GLM 4.7 Flash — Zhipu's small MoE (Glm4MoeLiteForCausalLM), AWQ 4-bit via
+            # compressed-tensors. Verified loading and serving on a GB300 (sm_103) with
+            # vLLM 0.28.0, 2026-09-09: engine init 149.8 s, full CUDA-graph capture.
+            #
+            # NO REASONING PARSER, deliberately. GLM 4.7 is a thinking model, and with a
+            # parser configured a reply still inside its thinking block returns empty
+            # content AND empty reasoning_content, which scores zero tokens in a
+            # benchmark. Left unset, the reasoning lands in content and measures
+            # correctly. Same trap the Spark Qwen3.6 runs hit from the other direction.
+            if [ "$TOTAL_VRAM" -lt 24 ]; then
+                echo -e "${RED}✗ GLM 4.7 Flash requires ~24 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="cyankiwi/GLM-4.7-Flash-AWQ-4bit"; VLLM_MODEL_SIZE_GB=20
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser glm45"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        14)
+            # GLM 4.7 flagship — 355B MoE (Glm4MoeForCausalLM), NVIDIA first-party NVFP4
+            # via modelopt. ~230 GB of weights, so this needs a 260 GB+ device: today
+            # that means GB300 (284 GB) or a multi-GPU box. The zai-org FP8 release is
+            # 362 GB and does NOT fit on a single GB300 — NVFP4 is the reason this entry
+            # exists at all.
+            #
+            # NVFP4 GEMMs need Blackwell (compute 10.x datacenter or 12.x workstation).
+            # No reasoning parser — see choice 13 for why.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ GLM 4.7 NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 260 ]; then
+                echo -e "${RED}✗ GLM 4.7 NVFP4 requires ~260 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                echo -e "  ${YELLOW}Use choice 13 (GLM 4.7 Flash) on this hardware.${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/GLM-4.7-NVFP4"; VLLM_MODEL_SIZE_GB=230
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser glm45"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        15)
+            # Qwen3 235B-A22B — NVIDIA first-party NVFP4 (modelopt), 22B active params.
+            # ~134 GB, so it fits a single 150 GB+ device (GB300) or a multi-GPU box.
+            # Blackwell-gated for the same NVFP4 kernel reason as choice 14.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen3 235B NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 150 ]; then
+                echo -e "${RED}✗ Qwen3 235B NVFP4 requires ~150 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/Qwen3-235B-A22B-NVFP4"; VLLM_MODEL_SIZE_GB=134
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        16)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
