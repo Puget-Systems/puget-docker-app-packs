@@ -88,9 +88,21 @@ show_vllm_model_menu() {
         echo -e " 15) Qwen 3 (235B MoE NVFP4)    - ${RED}Requires ~150 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo " 16) Custom                      - Enter a HuggingFace model ID"
-    echo " 17) Skip                        - I'll configure via .env later"
-    MENU_MAX=17
+    if [ "$TOTAL_VRAM" -ge 200 ]; then
+        echo " 16) DeepSeek V4 Flash (FP8)    - Native FP8, MLA, 1M ctx (~167 GB) [New]"
+    else
+        echo -e " 16) DeepSeek V4 Flash (FP8)    - ${RED}Requires ~200 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 160 ]; then
+        echo " 17) Qwen 3.8 Flash-Next (NVFP4)- 180B MoE, Blackwell FP4 (~135 GB) [New]"
+    else
+        echo -e " 17) Qwen 3.8 Flash-Next (NVFP4)- ${RED}Requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 18) Custom                      - Enter a HuggingFace model ID"
+    echo " 19) Skip                        - I'll configure via .env later"
+    MENU_MAX=19
 }
 
 # select_vllm_model <choice>
@@ -349,6 +361,54 @@ select_vllm_model() {
             VLLM_IMAGE="vllm/vllm-openai:latest"
             ;;
         16)
+            # DeepSeek V4 Flash (0731 refresh) — the checkpoint DeepSeek actually
+            # ships, FP8 native, no third-party quant in the path. 167 GB, so it sits
+            # comfortably on a 277 GiB card where the FP8 releases of GLM-5.3 (328 GB)
+            # and DeepSeek-V4-Pro (865 GB) do not.
+            #
+            # Attention geometry is the reason to test it: 43 layers, ONE kv head,
+            # head_dim 512 (MLA), and max_position_embeddings 1,048,576. The KV cache
+            # per token is tiny relative to the weight footprint, which is exactly the
+            # regime a big-VRAM card is bought for. Do NOT size its KV with the dense
+            # GQA formula; measure it.
+            #
+            # Needs a vLLM that knows DeepseekV4ForCausalLM. :latest (0.28.0) is the
+            # floor we have tested for the other entries here; if the arch is missing
+            # the load fails fast with an unrecognised model type.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 9 ] 2>/dev/null; then
+                echo -e "${RED}✗ DeepSeek V4 Flash is an FP8 checkpoint and needs Hopper or newer (compute 9.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 200 ]; then
+                echo -e "${RED}✗ DeepSeek V4 Flash requires ~200 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="deepseek-ai/DeepSeek-V4-Flash-0731"; VLLM_MODEL_SIZE_GB=167
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser deepseek_v3"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            # 1M native context will not fit alongside 167 GB of weights. Size to what
+            # the remaining VRAM supports and raise it deliberately after measuring.
+            VLLM_MAX_CTX="131072"
+            ;;
+        17)
+            # Qwen 3.8 Flash-Next, NVFP4. Qwen's own release is 360 GB at bf16 and 186 GB
+            # at FP8; this modelopt NVFP4 conversion is 135 GB, the only one of the three
+            # with real headroom on a single card. THIRD-PARTY quant: unlike entry 16 there
+            # is no first-party low-bit checkpoint, so the G12 quality gate matters more
+            # here, not less. Verify against Qwen's own FP8 before quoting it.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.8 Flash-Next NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 160 ]; then
+                echo -e "${RED}✗ Qwen 3.8 Flash-Next NVFP4 requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="RadixArk/Qwen3.8-Flash-Next-NVFP4"; VLLM_MODEL_SIZE_GB=135
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        18)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
