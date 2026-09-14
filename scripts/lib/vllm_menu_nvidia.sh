@@ -95,7 +95,7 @@ show_vllm_model_menu() {
     fi
 
     if [ "$TOTAL_VRAM" -ge 160 ]; then
-        echo " 17) Qwen 3.8 Flash-Next (NVFP4)- 180B MoE, Blackwell FP4 (~135 GB) [New]"
+        echo " 17) Qwen 3.8 Flash-Next (NVFP4)- 180B MoE, Blackwell FP4 (~135 GB) [nightly only]"
     else
         echo -e " 17) Qwen 3.8 Flash-Next (NVFP4)- ${RED}Requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
@@ -404,9 +404,20 @@ select_vllm_model() {
                 echo -e "${RED}✗ Qwen 3.8 Flash-Next NVFP4 requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
+            # ARCH NOT IN THE STABLE IMAGE. Checked against the running registry on
+            # 2026-09-14: vllm/vllm-openai:latest (0.28.0) does NOT list
+            # Qwen4ExpForConditionalGeneration, so this model fails at load with an
+            # unrecognised model type. Same situation entry 12 documents, and the same
+            # remedy: ride the nightly line rather than pin a stable tag. Do not "fix"
+            # this back to :latest until a release ships the arch.
+            #
+            # Verify before trusting a run from this entry:
+            #   docker run --rm --entrypoint python3 <image> -c \
+            #     'from vllm.model_executor.models.registry import ModelRegistry; \
+            #      print("Qwen4ExpForConditionalGeneration" in ModelRegistry.get_supported_archs())'
             VLLM_MODEL_ID="RadixArk/Qwen3.8-Flash-Next-NVFP4"; VLLM_MODEL_SIZE_GB=135
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-            VLLM_IMAGE="vllm/vllm-openai:latest"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         18)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID

@@ -10,7 +10,7 @@ d5099925571762201ba5ab887d002784  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 814f58fc072a6494f52f3620de637fe5  ./scripts/lib/vllm_menu_amd.sh
 58d17bd7cd0d7a237459acca409fbb95  ./scripts/lib/vllm_menu_intel.sh
-5f8315d3570489c0070a86579907bb87  ./scripts/lib/vllm_menu_nvidia.sh
+bb655f9bae15f8b0226bd6749ef2d22e  ./scripts/lib/vllm_menu_nvidia.sh
 a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh
 bd4d69332993a2eb292c99418757057b  ./scripts/lib/vllm_monitor.sh
 22195389bc8d35cb78f01987eeeaa307  ./scripts/list_models.sh
