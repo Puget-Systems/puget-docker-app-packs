@@ -391,6 +391,13 @@ select_vllm_model() {
             fi
             VLLM_MODEL_ID="deepseek-ai/DeepSeek-V4-Flash-0731"; VLLM_MODEL_SIZE_GB=167
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser deepseek_v3"
+            # MANDATORY. The fp8_ds_mla attention layout refuses anything else:
+            #   AssertionError: DeepseekV4 fp8_ds_mla layout only supports fp8
+            #   kv-cache, got auto
+            # It is not a tuning knob, the engine will not start without it. It also
+            # halves the KV footprint, which is why this model holds 923,806 KV tokens
+            # against GLM 4.7's 172,864 while being only 26% smaller.
+            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8"
             VLLM_IMAGE="vllm/vllm-openai:latest"
             # 1M native context will not fit alongside 167 GB of weights. Size to what
             # the remaining VRAM supports and raise it deliberately after measuring.
