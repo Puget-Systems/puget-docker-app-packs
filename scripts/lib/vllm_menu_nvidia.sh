@@ -100,9 +100,15 @@ show_vllm_model_menu() {
         echo -e " 17) Qwen 3.8 Flash-Next (NVFP4)- ${RED}Requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo " 18) Custom                      - Enter a HuggingFace model ID"
-    echo " 19) Skip                        - I'll configure via .env later"
-    MENU_MAX=19
+    if [ "$TOTAL_VRAM" -ge 28 ]; then
+        echo " 18) Qwen 3.6 (35B MoE NVFP4)   - 3B active, NVIDIA first-party FP4 (~23 GB) [New]"
+    else
+        echo -e " 18) Qwen 3.6 (35B MoE NVFP4)   - ${RED}Requires ~28 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 19) Custom                      - Enter a HuggingFace model ID"
+    echo " 20) Skip                        - I'll configure via .env later"
+    MENU_MAX=20
 }
 
 # select_vllm_model <choice>
@@ -420,6 +426,24 @@ select_vllm_model() {
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         18)
+            # Qwen 3.6 35B-A3B, NVIDIA first-party NVFP4. Small (23 GB) but current,
+            # and the useful counterweight to the flagship entries: on a 277 GiB card
+            # it leaves room for 6.2M KV tokens, 152x concurrency at 40k context,
+            # against 5.28x for GLM 4.7 at 355B. Same card, same context, thirty times
+            # the concurrent users. Report both ends or "it fits" means nothing.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.6 35B NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 28 ]; then
+                echo -e "${RED}✗ Qwen 3.6 35B NVFP4 requires ~28 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/Qwen3.6-35B-A3B-NVFP4"; VLLM_MODEL_SIZE_GB=23
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        19)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
