@@ -294,12 +294,22 @@ select_vllm_model() {
                 echo -e "${RED}✗ Qwen 3.8 27B NVFP4 requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            VLLM_MODEL_ID="unsloth/Qwen3.8-27B-NVFP4"; VLLM_MODEL_SIZE_GB=16
+            # Image moved from ${NIGHTLY_PREFIX} to :latest on 2026-09-18. The arch
+            # has since landed in stable, verified against the running registry:
+            #   Qwen3_5ForConditionalGeneration  SUPPORTED
+            #   Qwen3_5MTP                       SUPPORTED   (MTP draft head)
+            # This is not cosmetic. On a GB300 the cu130-nightly line is vLLM 0.19.2,
+            # which has no sm_103 in its arch list and cannot serve the card at all,
+            # so the nightly pin was actively broken on the newest hardware.
+            #
+            # VLLM_EXTRA_PIP (transformers>=5.8.0) dropped with the same change: the
+            # stable image ships the floor natively now, and the hook cost an
+            # in-container pip install on every start.
+            VLLM_MODEL_ID="unsloth/Qwen3.8-27B-NVFP4"; VLLM_MODEL_SIZE_GB=23
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_ENABLE_MTP="1"
-            VLLM_EXTRA_PIP="transformers>=5.8.0"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
             # KV cache is fp16 here, so context is sized to what's left after weights
             # rather than the model's native 262K.
             if [ "$TOTAL_VRAM" -ge 48 ]; then
