@@ -9,6 +9,36 @@
 # Usage:
 #   show_vllm_model_menu          # prints the numbered model list
 #   select_vllm_model <choice>    # sets VLLM_* output vars, returns 0/1/2
+#
+# MTP knobs (entry 12 only; see _vllm_mtp_default):
+#   VLLM_ENABLE_MTP=1|0         operator override, read from the environment
+#   VLLM_SERVING_PROFILE=team|personal   picks the default when no override is set
+
+# Snapshot the operator's VLLM_ENABLE_MTP once, at source time. select_vllm_model
+# writes that same variable, so reading it on a later call would see the previous
+# entry's result instead of the environment (list_models.sh and validate_models.sh
+# call select_vllm_model in a loop).
+if [ -z "${_VLLM_MTP_ENV_CAPTURED:-}" ]; then
+    _VLLM_MTP_ENV="${VLLM_ENABLE_MTP:-}"
+    _VLLM_MTP_ENV_CAPTURED=1
+fi
+
+# _vllm_mtp_default: echo 1 or 0 for entries whose MTP is conditional.
+# An explicit VLLM_ENABLE_MTP in the environment wins. Otherwise the serving profile
+# decides: MTP speculative decoding helps single-stream latency but eats KV cache and
+# batch headroom, and its acceptance-rate win shrinks as concurrency climbs, so it
+# defaults ON for personal (single-user interactive) and OFF for team (multi-user).
+# team is the default profile because team_llm is the pack that serves vLLM.
+_vllm_mtp_default() {
+    case "$(printf '%s' "$_VLLM_MTP_ENV" | tr 'A-Z' 'a-z')" in
+        1|true|yes|on)  echo 1; return ;;
+        0|false|no|off) echo 0; return ;;
+    esac
+    case "${VLLM_SERVING_PROFILE:-team}" in
+        personal|personal_llm|single) echo 1 ;;
+        *)                            echo 0 ;;
+    esac
+}
 
 show_vllm_model_menu() {
     echo "  1) Qwen 3.6 (35B MoE AWQ)     - Agentic reasoning, 128K ctx (~22 GB) [New]"
@@ -278,7 +308,9 @@ select_vllm_model() {
             # compute capability as well as VRAM — on pre-Blackwell the weights load and
             # then fail in the kernel selector, which is a confusing way to find out.
             # MTP draft head is built into the checkpoint (compose injects
-            # --speculative-config); speculative decoding is lossless. No eager mode —
+            # --speculative-config when VLLM_ENABLE_MTP=1); speculative decoding is
+            # lossless. MTP is conditional here, not always-on: see _vllm_mtp_default
+            # (env override, else on for personal, off for team). No eager mode:
             # CUDA graphs are part of the speedup. If a single 24 GB card OOMs during
             # graph capture, add --enforce-eager via EXTRA_VLLM_ARGS in .env, and
             # --kv-cache-dtype fp8 is the lever for pushing past the context set here.
@@ -308,7 +340,7 @@ select_vllm_model() {
             VLLM_MODEL_ID="unsloth/Qwen3.8-27B-NVFP4"; VLLM_MODEL_SIZE_GB=23
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_ENABLE_MTP="1"
+            VLLM_ENABLE_MTP="$(_vllm_mtp_default)"
             VLLM_IMAGE="vllm/vllm-openai:latest"
             # KV cache is fp16 here, so context is sized to what's left after weights
             # rather than the model's native 262K.
