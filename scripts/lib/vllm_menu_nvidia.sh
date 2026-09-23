@@ -125,7 +125,7 @@ show_vllm_model_menu() {
     fi
 
     if [ "$TOTAL_VRAM" -ge 160 ]; then
-        echo " 17) Qwen 3.8 Flash-Next (NVFP4)- 180B MoE, Blackwell FP4 (~135 GB) [nightly only]"
+        echo " 17) Qwen 3.8 Flash-Next (NVFP4)- 180B MoE, Blackwell FP4 (~129 GB) [New]"
     else
         echo -e " 17) Qwen 3.8 Flash-Next (NVFP4)- ${RED}Requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
@@ -162,6 +162,7 @@ select_vllm_model() {
     VLLM_EXTRA_ARGS=""
     VLLM_ENABLE_MTP=""
     VLLM_EXTRA_PIP=""
+    VLLM_GPU_MEM_UTIL_OVERRIDE=""
     VLLM_DTYPE="auto"
     VLLM_IMAGE="vllm/vllm-openai:v0.20.2"
     VLLM_MAX_CTX=""
@@ -470,9 +471,19 @@ select_vllm_model() {
             #   docker run --rm --entrypoint python3 <image> -c \
             #     'from vllm.model_executor.models.registry import ModelRegistry; \
             #      print("Qwen4ExpForConditionalGeneration" in ModelRegistry.get_supported_archs())'
-            VLLM_MODEL_ID="RadixArk/Qwen3.8-Flash-Next-NVFP4"; VLLM_MODEL_SIZE_GB=135
+            VLLM_MODEL_ID="RadixArk/Qwen3.8-Flash-Next-NVFP4"; VLLM_MODEL_SIZE_GB=129
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            # :latest since 2026-09-23. vLLM 0.30.0 registers Qwen4ExpForConditionalGeneration,
+            # so the nightly workaround above is obsolete AND harmful: on a GB300
+            # ${NIGHTLY_PREFIX} resolves to cu130-nightly, which is vLLM 0.19.2 and fails at
+            # load with "model type `qwen4_exp` but Transformers does not recognize this
+            # architecture". Verified serving on 0.30.0 at util 0.82.
+            #
+            # 0.88 OOMs: vLLM sizes a 155.07 GiB KV pool against 153.68 GiB free. 0.82 still
+            # yields 4.48M KV tokens (109x concurrency at 40k), roughly double what a 64-user
+            # sweep needs.
+            VLLM_GPU_MEM_UTIL_OVERRIDE="0.82"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
             ;;
         18)
             # Qwen 3.6 35B-A3B, NVIDIA first-party NVFP4. Small (23 GB) but current,
@@ -509,7 +520,18 @@ select_vllm_model() {
     esac
 
     # --- Auto-tune GPU memory utilization based on model size vs available VRAM ---
+    # An entry may pin VLLM_GPU_MEM_UTIL_OVERRIDE when the heuristic below is wrong for
+    # it. The heuristic keys off weights-as-a-share-of-VRAM, which does not see the KV
+    # pool vLLM will then try to allocate, so a model can sit in the "roomy" band and
+    # still OOM at startup. Measured on a GB300: Qwen 3.8 Flash-Next (129 GB of 277,
+    # i.e. 46% and therefore 0.90 by heuristic) asks for a 155.07 GiB KV pool against
+    # 153.68 GiB free and dies. 0.82 serves it with 4.48M KV tokens to spare.
     local available_vram=$((VRAM_GB * VLLM_GPU_COUNT))
+    if [ -n "${VLLM_GPU_MEM_UTIL_OVERRIDE:-}" ]; then
+        VLLM_GPU_MEM_UTIL="$VLLM_GPU_MEM_UTIL_OVERRIDE"
+        VLLM_MIN_DRIVER=$(min_driver_for_image "$VLLM_IMAGE" 2>/dev/null || true)
+        return 0
+    fi
     VLLM_GPU_MEM_UTIL="0.90"
 
     if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
