@@ -136,9 +136,15 @@ show_vllm_model_menu() {
         echo -e " 18) Qwen 3.6 (35B MoE NVFP4)   - ${RED}Requires ~28 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo " 19) Custom                      - Enter a HuggingFace model ID"
-    echo " 20) Skip                        - I'll configure via .env later"
-    MENU_MAX=20
+    if [ "$TOTAL_VRAM" -ge 240 ]; then
+        echo " 19) GLM 5.3 Flash (NVFP4)      - Glm5Next MoE, RedHatAI FP4 (~198 GB) [New]"
+    else
+        echo -e " 19) GLM 5.3 Flash (NVFP4)      - ${RED}Requires ~240 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 20) Custom                      - Enter a HuggingFace model ID"
+    echo " 21) Skip                        - I'll configure via .env later"
+    MENU_MAX=21
 }
 
 # select_vllm_model <choice>
@@ -504,6 +510,37 @@ select_vllm_model() {
             VLLM_IMAGE="vllm/vllm-openai:latest"
             ;;
         19)
+            # GLM 5.3 Flash — Glm5NextForConditionalGeneration, RedHatAI's
+            # compressed-tensors NVFP4 conversion. 198 GB, the only GLM 5.3 release that
+            # fits a single 277 GiB card: zai-org's own FP8 is 328 GB and the bf16 is
+            # larger still.
+            #
+            # ARCH GATE. Checked against the running registry on 2026-09-24:
+            # vllm/vllm-openai:latest (0.30.0) DOES list Glm5NextForConditionalGeneration.
+            # 0.28.0 does not. Do not pin an older tag here or the load fails with an
+            # unrecognised model type.
+            #
+            # NVFP4 GEMMs need Blackwell. THIRD-PARTY quant like entry 17, so the G12
+            # quality gate is mandatory before quoting anything from this entry.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ GLM 5.3 Flash NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 240 ]; then
+                echo -e "${RED}✗ GLM 5.3 Flash NVFP4 requires ~240 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="RedHatAI/GLM-5.3-Flash-NVFP4"; VLLM_MODEL_SIZE_GB=198
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser glm47"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            # 198 GB of weights on a 277 GiB card leaves the KV pool about 57 GiB at
+            # 0.92, which is what the weights-share heuristic picks anyway. Pinned so a
+            # later heuristic change cannot silently move it: GLM 4.7 OOMed during CUDA
+            # graph capture when this number went up, not when the pool did.
+            VLLM_GPU_MEM_UTIL_OVERRIDE="0.92"
+            VLLM_MAX_CTX="131072"
+            ;;
+        20)
             read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
             # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
             if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
