@@ -127,7 +127,9 @@ else
     write_env_var "THINKING_ARGS" "$VLLM_THINKING_ARGS" ".env"
     write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" ".env"
     write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" ".env"
-    write_env_var "VLLM_ENABLE_MTP" "${VLLM_ENABLE_MTP:-}" ".env"
+    # Compose tests VLLM_ENABLE_MTP with ${VAR:+...}, so any non-empty value (even
+    # "0") would inject --speculative-config. Write "1" or nothing.
+    write_env_var "VLLM_ENABLE_MTP" "$([ "${VLLM_ENABLE_MTP:-}" = 1 ] && echo 1)" ".env"
     write_env_var "VLLM_EXTRA_PIP" "${VLLM_EXTRA_PIP:-}" ".env"
     write_env_var "DTYPE" "$VLLM_DTYPE" ".env"
     write_env_var "NCCL_P2P_DISABLE" "${VLLM_NCCL_P2P_DISABLE:-1}" ".env"

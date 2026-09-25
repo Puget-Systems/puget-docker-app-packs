@@ -98,10 +98,17 @@ detect_gpus() {
         VRAM_GB=$((VRAM_MB / 1024))
         TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
 
-        # Detect compute capability (Blackwell = 12.0+)
+        # Detect compute capability. Blackwell spans TWO major versions, and the
+        # split is by product line, not by age:
+        #   10.x — datacenter Blackwell: sm_100 (B200/GB200), sm_103 (GB300 Ultra)
+        #   12.x — consumer/workstation Blackwell: sm_120 (RTX 50 / RTX PRO 6000), sm_121
+        # Hopper is 9.x, so ">= 10" is the correct family test. The previous ">= 12"
+        # check silently misclassified every datacenter Blackwell box as pre-Blackwell,
+        # which both failed the NVFP4 menu gates and selected the wrong (non-cu130)
+        # nightly image line. Found on a GB300 (compute 10.3), Sept 2026.
         COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
         COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
-        if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
+        if [ "${COMPUTE_MAJOR:-0}" -ge 10 ] 2>/dev/null; then
             IS_BLACKWELL=true
             NIGHTLY_PREFIX="cu130-nightly"
         else

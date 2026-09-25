@@ -50,7 +50,15 @@ services:
         --tensor-parallel-size=${GPU_COUNT:-1}
         ${MAX_CONTEXT:+--max-model-len=${MAX_CONTEXT}}
         --gpu-memory-utilization=${GPU_MEMORY_UTILIZATION:-0.90}
-        --max-num-seqs=32
+        # Engine batch cap: the most requests vLLM will run concurrently. The 33rd
+        # request does not get a slow answer, it waits in the scheduler queue while the
+        # GPU may still be idle, so on a large card this is the first thing that limits
+        # how many people a server holds. Measured on a GB300: time to first token is
+        # flat to 32 concurrent users and then rises 6x to 26x, which is the shape of a
+        # queue behind this number rather than a card running out of compute. Left at 32
+        # by default because that is what every shipped configuration has been tested
+        # with; override per deployment.
+        --max-num-seqs=${MAX_NUM_SEQS:-32}
         --dtype=${DTYPE:-auto}
         --trust-remote-code
         --disable-custom-all-reduce
