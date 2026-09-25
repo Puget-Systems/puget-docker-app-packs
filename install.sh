@@ -176,7 +176,17 @@ elif [ "$GPU_VENDOR" == "intel" ]; then
     echo -e "${GREEN}✓ Intel ARC GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
     echo -e "${BLUE}Checking Intel Compute Runtime...${NC}"
     
-    if ! dpkg -l | grep -q "intel-level-zero-gpu"; then
+    # Level Zero ships as libze-intel-gpu1 on current Ubuntu (what we install below) and
+    # as intel-level-zero-gpu on older releases; accept either. Query each by name rather
+    # than `dpkg -l | grep -q`, which under pipefail can fail on SIGPIPE even when found.
+    INTEL_L0_FOUND=false
+    for _pkg in libze-intel-gpu1 intel-level-zero-gpu; do
+        if dpkg-query -W -f='${Status}' "$_pkg" 2>/dev/null | grep -q "ok installed"; then
+            INTEL_L0_FOUND=true
+            break
+        fi
+    done
+    if [ "$INTEL_L0_FOUND" != true ]; then
         echo -e "${RED}✗ Intel Level Zero / Compute Runtime not fully installed.${NC}"
         read -p "  Would you like to install Intel Compute Runtime now? (Y/n): " INSTALL_INTEL
         if [[ "$INSTALL_INTEL" != "n" && "$INSTALL_INTEL" != "N" ]]; then
@@ -323,26 +333,33 @@ elif [ "$GPU_VENDOR" == "nvidia" ] || command -v nvidia-smi &> /dev/null; then
         exit 1
     fi
 
-    # ALWAYS configure Docker for NVIDIA GPU access.
-    # nvidia-ctk runtime configure is idempotent — safe to run every time.
-    # We run it unconditionally because `docker info | grep nvidia` can false-positive
-    # on the GPU device name (e.g. "NVIDIA GeForce RTX 5090") even when the runtime
-    # is NOT actually registered.
+    # Configure Docker for NVIDIA GPU access, unless the runtime is already registered.
+    # The restart bounces every container on the host, so a re-run on a box that is
+    # already serving (a GB300 with vLLM up, a Spark running the HF mirror) must not do it.
+    # Ask docker for its registered runtime NAMES: a plain `docker info | grep nvidia`
+    # false-positives on the GPU device name (e.g. "NVIDIA GeForce RTX 5090") even when
+    # the runtime is NOT registered. If docker info fails (user not in the docker group
+    # yet), the list is empty and we configure, as before.
     if command -v nvidia-ctk &> /dev/null && command -v docker &> /dev/null; then
-        echo -e "${BLUE}Configuring Docker for NVIDIA GPU access...${NC}"
-        sudo nvidia-ctk runtime configure --runtime=docker
-        sudo systemctl restart docker
+        DOCKER_RUNTIMES=$(docker info --format '{{range $name, $_ := .Runtimes}}{{$name}} {{end}}' 2>/dev/null || true)
+        if [[ " $DOCKER_RUNTIMES " == *" nvidia "* ]]; then
+            echo -e "${GREEN}✓ Docker NVIDIA runtime already configured (no restart needed).${NC}"
+        else
+            echo -e "${BLUE}Configuring Docker for NVIDIA GPU access...${NC}"
+            sudo nvidia-ctk runtime configure --runtime=docker
+            sudo systemctl restart docker
 
-        # Wait for Docker to restart
-        echo "Waiting for Docker to restart..."
-        for i in {1..15}; do
-            if docker info &> /dev/null 2>&1; then
-                break
-            fi
-            sleep 1
-        done
+            # Wait for Docker to restart
+            echo "Waiting for Docker to restart..."
+            for i in {1..15}; do
+                if docker info &> /dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
 
-        echo -e "${GREEN}✓ Docker GPU runtime configured.${NC}"
+            echo -e "${GREEN}✓ Docker GPU runtime configured.${NC}"
+        fi
 
         # Verify GPU access with a real container — this is the definitive test.
         echo "Verifying GPU access in Docker (this may pull an image on first run)..."
