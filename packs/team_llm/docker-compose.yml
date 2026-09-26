@@ -50,15 +50,22 @@ services:
         --tensor-parallel-size=${GPU_COUNT:-1}
         ${MAX_CONTEXT:+--max-model-len=${MAX_CONTEXT}}
         --gpu-memory-utilization=${GPU_MEMORY_UTILIZATION:-0.90}
-        # Engine batch cap: the most requests vLLM will run concurrently. The 33rd
-        # request does not get a slow answer, it waits in the scheduler queue while the
-        # GPU may still be idle, so on a large card this is the first thing that limits
-        # how many people a server holds. Measured on a GB300: time to first token is
-        # flat to 32 concurrent users and then rises 6x to 26x, which is the shape of a
-        # queue behind this number rather than a card running out of compute. Left at 32
-        # by default because that is what every shipped configuration has been tested
-        # with; override per deployment.
-        --max-num-seqs=${MAX_NUM_SEQS:-32}
+        # Engine batch cap: the most requests vLLM will run concurrently. Requests past
+        # this number do not get a slow answer, they wait in the scheduler queue while
+        # the GPU may still be idle, so this sets how many people a server holds.
+        #
+        # Measured on a GB300 (Qwen3.6-35B, 4096-token prompts, 40/48/56/64 users,
+        # cap 32 vs cap 256): raising it is free below the cap and compounding above it.
+        #   40 users  +15% throughput, wait 1.26s -> 0.59s
+        #   48 users  +25% throughput, wait 2.23s -> 0.63s
+        #   56 users  +36% throughput, wait 3.20s -> 0.70s
+        #   64 users  +46% throughput, wait 4.18s -> 0.75s
+        # Qwen3.8-Flash-Next repeats it: +44% at 64 users, 6.22s -> 0.90s. Nothing had
+        # saturated at 64, and the KV pool cost of the larger cap was 0.3%.
+        #
+        # 256 on a card this size; lower it only where VRAM is tight enough that the
+        # per-sequence state matters.
+        --max-num-seqs=${MAX_NUM_SEQS:-256}
         --dtype=${DTYPE:-auto}
         --trust-remote-code
         --disable-custom-all-reduce
