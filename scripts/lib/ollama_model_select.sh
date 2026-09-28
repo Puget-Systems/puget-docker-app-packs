@@ -53,8 +53,14 @@ show_ollama_model_menu() {
         echo -e "  7) Gemma 4 (31B)         - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo "  8) Skip                  - I'll download models later"
-    MENU_MAX=8
+    if [ "$TOTAL_VRAM" -ge 18 ]; then
+        echo "  8) Qwen 3.8 (27B Dense)  - Hybrid attention, vision, 262K ctx (~17 GB) [New]"
+    else
+        echo -e "  8) Qwen 3.8 (27B Dense)  - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo "  9) Skip                  - I'll download models later"
+    MENU_MAX=9
 }
 
 # select_ollama_model <choice>
@@ -74,6 +80,8 @@ select_ollama_model() {
         5) OLLAMA_MODEL_TAG="nemotron-3-nano:30b"; OLLAMA_MODEL_VRAM_GB=24 ;;
         6) OLLAMA_MODEL_TAG="nemotron-3-super";    OLLAMA_MODEL_VRAM_GB=96 ;;
         7) OLLAMA_MODEL_TAG="gemma4:31b";          OLLAMA_MODEL_VRAM_GB=20 ;;
+        # Needs Ollama >= 0.34 (older servers answer the pull with 412); compose pins it.
+        8) OLLAMA_MODEL_TAG="qwen3.8:27b";         OLLAMA_MODEL_VRAM_GB=18 ;;
         *) return 2 ;;
     esac
 

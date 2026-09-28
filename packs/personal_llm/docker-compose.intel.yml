@@ -1,7 +1,12 @@
 # Intel XPU GPU access for personal_llm — layered over docker-compose.yml by install.sh.
-# Intel uses the IPEX-LLM Ollama image (different from ollama/ollama) and the render node.
+# Intel runs the same upstream ollama/ollama image as NVIDIA, on its Vulkan backend.
+# The IPEX-LLM image this used to point at never served: its default command is
+# /bin/bash, so the container exited and restarted in a loop, and the Ollama it
+# bundles (0.9.3) predates the Qwen 3.6 / 3.8 architecture anyway. Validated on
+# 2x Arc Pro B70: both cards detected, qwen3.8:27b fully offloaded (66/66 layers).
 services:
   inference:
-    image: intelanalytics/ipex-llm-inference-cpp-xpu:latest
     devices:
       - /dev/dri:/dev/dri
+    environment:
+      - OLLAMA_VULKAN=1
