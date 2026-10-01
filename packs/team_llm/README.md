@@ -93,8 +93,8 @@ Benefits:
 
 | GPU Family | Architecture | CUDA | Docker Image | Status |
 |---|---|---|---|---|
-| RTX 4090 / A6000 | Ada (sm_89) | 12.6 | `vllm/vllm-openai:latest` | ✅ Full support |
-| RTX 5090 / PRO 6000 | Blackwell (sm_120) | 13.0 | `vllm/vllm-openai:cu130-nightly` | ✅ Full support |
+| RTX 4090 / A6000 | Ada (sm_89) | 13.0 | `vllm/vllm-openai:latest` / `nightly` | ✅ Full support |
+| RTX 5090 / PRO 6000, GB10, GB300 | Blackwell (sm_120/121/103) | 13.0 | `vllm/vllm-openai:latest` / `nightly` | ✅ Full support |
 
 The wizard automatically detects your GPU architecture and selects the correct Docker image.
 

@@ -104,17 +104,19 @@ detect_gpus() {
         #   12.x — consumer/workstation Blackwell: sm_120 (RTX 50 / RTX PRO 6000), sm_121
         # Hopper is 9.x, so ">= 10" is the correct family test. The previous ">= 12"
         # check silently misclassified every datacenter Blackwell box as pre-Blackwell,
-        # which both failed the NVFP4 menu gates and selected the wrong (non-cu130)
-        # nightly image line. Found on a GB300 (compute 10.3), Sept 2026.
+        # which failed the NVFP4 menu gates. Found on a GB300 (compute 10.3), Sept 2026.
+        #
+        # Every family uses the plain `nightly` tag. vLLM stopped publishing
+        # `cu130-nightly` on 2026-04-23 (frozen at 0.19.2, no sm_103), and `nightly`
+        # itself is now the CUDA 13.0 build, so it is the same line, kept current.
         COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
         COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
         if [ "${COMPUTE_MAJOR:-0}" -ge 10 ] 2>/dev/null; then
             IS_BLACKWELL=true
-            NIGHTLY_PREFIX="cu130-nightly"
         else
             IS_BLACKWELL=false
-            NIGHTLY_PREFIX="nightly"
         fi
+        NIGHTLY_PREFIX="nightly"
         return 0
     fi
 
@@ -126,13 +128,15 @@ detect_gpus() {
 # their own userspace; only the NVIDIA driver↔CUDA coupling bites here).
 # The mapping is the CUDA release each image line is built against:
 #   CUDA 13.0 → driver ≥ 580,  CUDA 12.8/12.9 → driver ≥ 570.
+# As of 2026-10 every vllm/vllm-openai tag the menus use (nightly, latest, v0.20.2,
+# v0.25.0) is a CUDA 13.0.2 build, so all of them need 580.
 # This is the single source of truth — the bench sources this file and gates
 # model selection with it, so keep it updated when image lines move to a new CUDA.
 min_driver_for_image() {
     case "$1" in
-        *cu130*)                   echo 580 ;;   # CUDA 13.0 (Blackwell nightly line)
+        *cu130*)                   echo 580 ;;   # CUDA 13.0
         *cu128*|*cu129*)           echo 570 ;;
-        vllm/vllm-openai:*)        echo 570 ;;   # stable/latest/nightly are CUDA 12.8+ builds
+        vllm/vllm-openai:*)        echo 580 ;;   # nightly/latest/vX.Y.Z are CUDA 13.0 builds
         rocm/*|*rocm*|intel/*|puget-vllm-xpu*) ;;  # non-NVIDIA: no NVIDIA driver gate
         *) ;;
     esac
