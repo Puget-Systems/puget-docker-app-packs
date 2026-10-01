@@ -92,7 +92,7 @@ cd puget-docker-app-packs
 - **Required for**: ComfyUI, Personal LLM, Team LLM
 - **Ada (RTX 4090)**: `sudo apt install nvidia-driver-550` (driver 550+)
 - **Blackwell (RTX 5090 / PRO 6000 / GB10)**: `sudo apt install nvidia-driver-580-open` (open kernel modules required)
-- Driver ≥580 is required for the CUDA 13 (`cu130`) model images used on Blackwell; ≥570 for the CUDA 12.8 stable images. Verify: `nvidia-smi`
+- Driver ≥580 is required for Team LLM: every vLLM image it uses is a CUDA 13.0 build, on every GPU family. Verify: `nvidia-smi`
 
 ### NVIDIA Container Toolkit (GPU Stacks)
 - The installer will offer to install this automatically
