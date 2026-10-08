@@ -1,9 +1,9 @@
 #!/bin/bash
 # Puget Systems — AMD (RDNA4 / R9700) LLM menu — LLAMA.CPP engine (Personal AND Team).
 # Intel Personal LLM runs the same menu on llama.cpp's SYCL build (server-intel image);
-# select_llama_model picks the image by GPU_VENDOR. Measured 2026-10-07 on an Arc Pro B70
-# (608 GB/s): Qwen3.8-27B Q4_K_M decodes at 27.8 tok/s on SYCL vs 17.1 on Ollama's Vulkan
-# backend (ceiling ~36), and the Qwen3.6-35B-A3B MoE at 103 vs 52.
+# select_llama_model picks the image by GPU_VENDOR. Measured 2026-10-08 on 2x Arc Pro B70
+# (608 GB/s), through the installed pack: Qwen3.6-35B-A3B Q4_K_M decodes at 95 tok/s vs 52
+# on Ollama's Vulkan backend, Qwen3.8-27B Q4_K_M at 25.2 vs 17.1 (ceiling ~36).
 #
 # llama.cpp (llama-server) is the default AMD engine for BOTH packs. Multi-GPU work goes
 # over direct HIP transfers (no RCCL, which deadlocks/fails on RDNA4), and --split-mode
@@ -175,6 +175,16 @@ select_llama_model() {
         *)
             return 2 ;;
     esac
+
+    # Intel: Unsloth's dynamic "UD" quants mix in tensor types the SYCL backend runs slowly
+    # (Qwen3.8-27B UD-Q4_K_M 21.6 tok/s vs 25.2 for a plain Q4_K_M on a B70, same flags),
+    # so the two measured entries use ggml-org's plain Q4_K_M builds instead.
+    if [ "${GPU_VENDOR:-}" = "intel" ]; then
+        case "$LLAMA_MODEL_ID" in
+            unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M) LLAMA_MODEL_ID="ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M" ;;
+            unsloth/Qwen3.8-27B-GGUF:Q4_K_M)     LLAMA_MODEL_ID="ggml-org/Qwen3.8-27B-GGUF:Q4_K_M" ;;
+        esac
+    fi
 
     # GPU split (benchmarked 2026-07-09, dual R9700, Qwen3.6-27B Q4_K_M): LAYER split
     # matches row-split at concurrency 1 (23.4 tok/s), beats it at concurrency 4

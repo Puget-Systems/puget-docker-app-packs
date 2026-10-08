@@ -5,7 +5,7 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 4d3b5d1e3b9174699f5cca1a941f9860  ./scripts/debug_docker_gpu.sh
 4147a673ac8b7a8291501490d01e5164  ./scripts/lib/env_write.sh
 36135ce0f35d8357e4b65272e1cba1bd  ./scripts/lib/gpu_detect.sh
-8b0d9a6dc1a4257b1a688a5840a10fbf  ./scripts/lib/llama_menu_amd.sh
+8c97accd4c123f8a2f5bc1eabf9baa97  ./scripts/lib/llama_menu_amd.sh
 160f5c7644c83bca746e561d9b046e9c  ./scripts/lib/ollama_model_select.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 814f58fc072a6494f52f3620de637fe5  ./scripts/lib/vllm_menu_amd.sh

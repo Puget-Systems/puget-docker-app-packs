@@ -58,8 +58,8 @@ All models are quantized (GGUF) for efficient single-GPU inference.
 On NVIDIA, Ollama automatically selects the correct CUDA runtime for your GPU. On AMD and
 Intel the engine is llama.cpp: the installer picks a GGUF model before launch, it downloads
 at container start, and the API is OpenAI-compatible on port 8000 instead of Ollama's
-11434. On an Arc Pro B70, llama.cpp's SYCL build decodes Qwen 3.8 27B at 27.8 tok/s vs
-17.1 on Ollama's Vulkan backend, and the Qwen 3.6 35B MoE at 103 tok/s.
+11434. On an Arc Pro B70, llama.cpp's SYCL build decodes the Qwen 3.6 35B MoE at 95 tok/s
+(52 on Ollama's Vulkan backend) and Qwen 3.8 27B at 25 tok/s (17).
 
 ## Context Window
 

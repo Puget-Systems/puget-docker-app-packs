@@ -1,8 +1,8 @@
 # Intel Arc Personal LLM — runs llama.cpp (llama-server, SYCL build), NOT Ollama.
 # Same engine swap as the AMD override (image + entrypoint + command + port, UI/brain
 # repointed to the OpenAI API on :8000); only the image and device passthrough differ.
-# Measured 2026-10-07 on 2x Arc Pro B70: Qwen3.8-27B Q4_K_M 27.8 tok/s here vs 17.1 on
-# Ollama's Vulkan backend, Qwen3.6-35B-A3B 103 vs 52 (see llama_menu_amd.sh).
+# Measured 2026-10-08 on 2x Arc Pro B70: Qwen3.6-35B-A3B 95 tok/s here vs 52 on Ollama's
+# Vulkan backend, Qwen3.8-27B 25.2 vs 17.1 (see llama_menu_amd.sh).
 # MODEL_ID / MAX_CONTEXT / LLAMA_PARALLEL / LLAMA_SPLIT_MODE / LLAMA_IMAGE come from .env.
 services:
   inference:
@@ -10,7 +10,7 @@ services:
     entrypoint: ["/app/llama-server"]
     command:
       - "-hf"
-      - "${MODEL_ID:-unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M}"
+      - "${MODEL_ID:-ggml-org/Qwen3.6-35B-A3B-GGUF:Q4_K_M}"
       - "-ngl"
       - "999"
       # Layer split across cards (none on one GPU); see llama_menu_amd.sh for the numbers.
