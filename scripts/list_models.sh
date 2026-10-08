@@ -86,9 +86,9 @@ if [ "$PACK_FILTER" = "all" ] || [ "$PACK_FILTER" = "team_llm" ]; then
     done
 fi
 
-# ── personal_llm (engine differs by vendor: AMD = llama.cpp, else Ollama) ───
+# ── personal_llm (engine differs by vendor: AMD/Intel = llama.cpp, else Ollama) ─
 if [ "$PACK_FILTER" = "all" ] || [ "$PACK_FILTER" = "personal_llm" ]; then
-    if [ "$GPU_VENDOR" = "amd" ] && [ -f "$LIB_DIR/llama_menu_amd.sh" ]; then
+    if { [ "$GPU_VENDOR" = "amd" ] || [ "$GPU_VENDOR" = "intel" ]; } && [ -f "$LIB_DIR/llama_menu_amd.sh" ]; then
         # shellcheck source=lib/llama_menu_amd.sh
         source "$LIB_DIR/llama_menu_amd.sh"
         show_llama_model_menu >/dev/null 2>&1

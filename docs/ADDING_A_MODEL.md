@@ -12,7 +12,7 @@ Models must be added to **both** the shared library and all callers.
 > | NVIDIA | `scripts/lib/vllm_menu_nvidia.sh` | Pre-quantized AWQ/NVFP4/MXFP4 repos |
 > | AMD (RDNA4, vLLM opt-in) | `scripts/lib/vllm_menu_amd.sh` | Online FP8 (`--quantization fp8`) on FP16 repos — Team opt-in via `TEAM_AMD_ENGINE=vllm` |
 > | Intel (XPU) | `scripts/lib/vllm_menu_intel.sh` | FP16 only — no AWQ/GPTQ/bf16 on XPU |
-> | AMD Personal + Team (llama.cpp, default) | `scripts/lib/llama_menu_amd.sh` | GGUF `repo:quant` IDs |
+> | AMD Personal + Team, Intel Personal (llama.cpp) | `scripts/lib/llama_menu_amd.sh` | GGUF `repo:quant` IDs |
 >
 > The benchmark suite enumerates all of these through `scripts/list_models.sh`
 > (a versioned TSV manifest) — as long as you follow the checklist below, new
@@ -77,7 +77,7 @@ These files read `MENU_MAX` dynamically, so **no range update needed** — but v
 
 ---
 
-## Ollama (Personal LLM — NVIDIA/Intel)
+## Ollama (Personal LLM — NVIDIA)
 
 ### 1. Model Menu Entry
 **File:** `scripts/lib/ollama_model_select.sh` → `show_ollama_model_menu()`
@@ -108,7 +108,7 @@ These files read `MENU_MAX` dynamically, so **no range update needed** — but v
 
 ---
 
-## llama.cpp (Personal + Team LLM — AMD)
+## llama.cpp (Personal + Team LLM — AMD; Personal LLM — Intel)
 
 **File:** `scripts/lib/llama_menu_amd.sh` → `show_llama_model_menu()` / `select_llama_model()`
 
