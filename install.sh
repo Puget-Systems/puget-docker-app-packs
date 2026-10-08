@@ -736,8 +736,8 @@ case $FLAVOR in
         echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to reconfigure."
         ;;
     personal_llm)
-        # AMD Personal runs llama.cpp (OpenAI API), every other vendor runs Ollama.
-        if [ "${GPU_VENDOR:-}" = "amd" ]; then
+        # AMD and Intel Personal run llama.cpp (OpenAI API), NVIDIA runs Ollama.
+        if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
             echo -e "${GREEN}Personal LLM (llama.cpp + Open WebUI)${NC}"
         else
             echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
@@ -762,8 +762,8 @@ case $FLAVOR in
 
         # llama.cpp needs MODEL_ID in .env BEFORE launch (it downloads via -hf at startup),
         # unlike Ollama which pulls into the running container. So select + write env here,
-        # pre-launch; the AMD compose override reads MODEL_ID/MAX_CONTEXT/LLAMA_PARALLEL.
-        if [ "${GPU_VENDOR:-}" = "amd" ]; then
+        # pre-launch; the AMD/Intel compose overrides read MODEL_ID/MAX_CONTEXT/LLAMA_PARALLEL.
+        if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
             echo ""
             echo -e "${YELLOW}Select a model:${NC}"
             echo ""
@@ -999,10 +999,10 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 echo -e "  Local:   ${BLUE}http://localhost:3000${NC}"
                 echo -e "  Network: ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
-                # AMD = llama.cpp: the model was set in .env pre-launch and downloads via
-                # -hf at container start. No `ollama pull` (no ollama in the image). Just
-                # wait for the OpenAI server to come up.
-                if [ "${GPU_VENDOR:-}" = "amd" ]; then
+                # AMD/Intel = llama.cpp: the model was set in .env pre-launch and downloads
+                # via -hf at container start. No `ollama pull` (no ollama in the image).
+                # Just wait for the OpenAI server to come up.
+                if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
                     echo -e "${BLUE}llama.cpp is downloading the model and starting (5–30 min)...${NC}"
                     wait_for_vllm "puget_ollama" "${LLAMA_MODEL_SIZE_GB:-0}" || true
                     echo -e "  When ready, pick the model from the dropdown at ${BLUE}http://localhost:3000${NC}"

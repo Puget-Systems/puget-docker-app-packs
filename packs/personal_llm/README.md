@@ -52,8 +52,14 @@ All models are quantized (GGUF) for efficient single-GPU inference.
 |---|---|---|
 | RTX 4090 / A6000 | Ada (sm_89) | ✅ Full support |
 | RTX 5090 / PRO 6000 | Blackwell (sm_120) | ✅ Full support |
+| Radeon AI PRO R9700 | RDNA4 | ✅ llama.cpp (ROCm) |
+| Arc Pro B70 | Battlemage | ✅ llama.cpp (SYCL) |
 
-Ollama automatically selects the correct CUDA runtime for your GPU.
+On NVIDIA, Ollama automatically selects the correct CUDA runtime for your GPU. On AMD and
+Intel the engine is llama.cpp: the installer picks a GGUF model before launch, it downloads
+at container start, and the API is OpenAI-compatible on port 8000 instead of Ollama's
+11434. On an Arc Pro B70, llama.cpp's SYCL build decodes Qwen 3.8 27B at 27.8 tok/s vs
+17.1 on Ollama's Vulkan backend, and the Qwen 3.6 35B MoE at 103 tok/s.
 
 ## Context Window
 

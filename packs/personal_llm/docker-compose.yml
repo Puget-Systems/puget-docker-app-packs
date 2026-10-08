@@ -2,7 +2,7 @@ services:
   # 1. Inference Engine
   inference:
     # 0.34.x: Qwen 3.8 needs it (0.21 answers the pull with 412 "requires a newer
-    # version of Ollama"), and it is also the Intel engine via Vulkan (see the intel override).
+    # version of Ollama"). AMD and Intel replace this engine with llama.cpp (see overrides).
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.34.4}
     container_name: puget_ollama
     restart: unless-stopped

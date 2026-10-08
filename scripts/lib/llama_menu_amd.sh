@@ -1,5 +1,9 @@
 #!/bin/bash
 # Puget Systems — AMD (RDNA4 / R9700) LLM menu — LLAMA.CPP engine (Personal AND Team).
+# Intel Personal LLM runs the same menu on llama.cpp's SYCL build (server-intel image);
+# select_llama_model picks the image by GPU_VENDOR. Measured 2026-10-07 on an Arc Pro B70
+# (608 GB/s): Qwen3.8-27B Q4_K_M decodes at 27.8 tok/s on SYCL vs 17.1 on Ollama's Vulkan
+# backend (ceiling ~36), and the Qwen3.6-35B-A3B MoE at 103 vs 52.
 #
 # llama.cpp (llama-server) is the default AMD engine for BOTH packs. Multi-GPU work goes
 # over direct HIP transfers (no RCCL, which deadlocks/fails on RDNA4), and --split-mode
@@ -24,7 +28,7 @@
 # Source only; sets LLAMA_* output vars.
 
 show_llama_model_menu() {
-    echo -e "${YELLOW}Available models (llama.cpp / GGUF, multi-GPU via HIP split):${NC}"
+    echo -e "${YELLOW}Available models (llama.cpp / GGUF, multi-GPU layer split):${NC}"
     echo ""
     # GGUF Q4_K_M ~= 0.6 GB/B params, Q8_0 ~= 1.06 GB/B. Sizes below are the GGUF footprint.
     if [ "$TOTAL_VRAM" -ge 22 ]; then
@@ -117,7 +121,13 @@ select_llama_model() {
     local choice="$1"
     LLAMA_MODEL_ID=""; LLAMA_MODEL_SIZE_GB=0
     LLAMA_GPU_COUNT=$GPU_COUNT
-    LLAMA_IMAGE="${LLAMA_IMAGE_AMD:-ghcr.io/ggml-org/llama.cpp:server-rocm}"
+    if [ "${GPU_VENDOR:-}" = "intel" ]; then
+        # Pinned build: the floating server-intel tag moves daily. b11459 is the build the
+        # B70 numbers above were measured on.
+        LLAMA_IMAGE="${LLAMA_IMAGE_INTEL:-ghcr.io/ggml-org/llama.cpp:server-intel-b11459}"
+    else
+        LLAMA_IMAGE="${LLAMA_IMAGE_AMD:-ghcr.io/ggml-org/llama.cpp:server-rocm}"
+    fi
     LLAMA_MAX_CTX="32768"
 
     case $choice in
@@ -150,7 +160,7 @@ select_llama_model() {
         10)
             # Qwen3.8 is hybrid-attention (48/64 linear layers) — needs a llama-server
             # image from 2026-08-14 or later; `docker compose pull` if the rolling
-            # server-rocm tag was cached before then.
+            # server-rocm tag was cached before then (the pinned Intel build is newer).
             [ "$TOTAL_VRAM" -lt 18 ] && { echo -e "${RED}✗ Qwen 3.8 27B Q4 needs ~18 GB.${NC}"; return 1; }
             LLAMA_MODEL_ID="unsloth/Qwen3.8-27B-GGUF:Q4_K_M"; LLAMA_MODEL_SIZE_GB=17 ;;
         11)
@@ -173,7 +183,10 @@ select_llama_model() {
     # ne12)) — its matmul path lacks those broadcast shapes) and segfaulted under
     # concurrency on non-P2P platforms, so it is no longer a default. Power users can set
     # LLAMA_SPLIT_MODE=row in .env for single-stream use — verify per model architecture
-    # first. Single GPU → "none" (nothing to split).
+    # first. Single GPU → "none" (nothing to split). Intel SYCL behaves the same way:
+    # layer split over 2x B70 decodes at 28.2 tok/s vs 27.8 on one card, so the second
+    # card costs nothing per stream and doubles the KV pool. SYCL only uses the Level Zero
+    # GPUs with the most compute units, so an iGPU next to the B70s is left out.
     if [ "${GPU_COUNT:-1}" -le 1 ]; then
         LLAMA_SPLIT_MODE="none"
     else

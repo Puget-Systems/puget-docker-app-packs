@@ -30,7 +30,7 @@ This repository uses an **App Pack** architecture. It provides specialized "Flav
 
 ### 3. Personal LLM
 *   **Target**: Single-User AI Assistant
-*   **Engine**: Ollama on NVIDIA/Intel; **llama.cpp** on AMD (both GPU-accelerated, easy model swapping)
+*   **Engine**: Ollama on NVIDIA; **llama.cpp** on AMD (ROCm) and Intel (SYCL) (all GPU-accelerated, easy model swapping)
 *   **Interface**: Open WebUI (ChatGPT-like)
 *   **Best For**: Personal workstations, one-command model management
 

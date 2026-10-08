@@ -31,7 +31,7 @@ if [ -z "$_LIBDIR" ]; then
 fi
 source "$_LIBDIR/gpu_detect.sh"
 source "$_LIBDIR/ollama_model_select.sh"
-source "$_LIBDIR/llama_menu_amd.sh"   # AMD Personal runs llama.cpp, not Ollama
+source "$_LIBDIR/llama_menu_amd.sh"   # AMD/Intel Personal run llama.cpp, not Ollama
 source "$_LIBDIR/vllm_monitor.sh"     # wait_for_vllm (llama-server health poll)
 source "$_LIBDIR/env_write.sh"
 
@@ -70,9 +70,9 @@ echo ""
 echo "  Available models (based on ${TOTAL_VRAM} GB total VRAM):"
 echo ""
 
-# AMD Personal runs llama.cpp (OpenAI API, downloads via -hf at container start). Every
-# other vendor runs Ollama (pull into the running container).
-if [ "${GPU_VENDOR:-}" = "amd" ]; then
+# AMD and Intel Personal run llama.cpp (OpenAI API, downloads via -hf at container start).
+# NVIDIA runs Ollama (pull into the running container).
+if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
     show_llama_model_menu
     echo ""
     read -p "Select [1-${MENU_MAX}]: " CHOICE
