@@ -68,9 +68,8 @@ cd puget-docker-app-packs
 ./install.sh
 ```
 
-> **Testing the develop branch (pre-release):** the unified installer currently
-> lives on `develop` while it's validated across NVIDIA/AMD/Intel hardware. Until
-> it merges to `main`, test it with:
+> **Testing the develop branch (pre-release):** to try changes before they reach
+> `main`, install from `develop`:
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/Puget-Systems/puget-docker-app-packs/develop/setup.sh -o setup.sh && BRANCH=develop bash setup.sh
 > ```
