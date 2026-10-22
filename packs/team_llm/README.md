@@ -93,10 +93,30 @@ Benefits:
 
 | GPU Family | Architecture | CUDA | Docker Image | Status |
 |---|---|---|---|---|
-| RTX 4090 / A6000 | Ada (sm_89) | 12.6 | `vllm/vllm-openai:latest` | ✅ Full support |
-| RTX 5090 / PRO 6000 | Blackwell (sm_120) | 13.0 | `vllm/vllm-openai:cu130-nightly` | ✅ Full support |
+| RTX 4090 / A6000 | Ada (sm_89) | 13.0 | `vllm/vllm-openai:latest` / `nightly` | ✅ Full support |
+| RTX 5090 / PRO 6000, GB10, GB300 | Blackwell (sm_120/121/103) | 13.0 | `vllm/vllm-openai:latest` / `nightly` | ✅ Full support |
 
 The wizard automatically detects your GPU architecture and selects the correct Docker image.
+
+### Known issue: Intel Arc Pro needs host RAM to cover vLLM's VRAM
+
+On Intel (B-series, `xe` kernel driver), every buffer vLLM allocates on the GPU is also
+backed by an equal amount of system RAM. That includes the KV cache, which vLLM sizes to
+`GPU_MEMORY_UTILIZATION` of each card. Host RAM therefore has to be at least
+`GPU_COUNT × VRAM per card × GPU_MEMORY_UTILIZATION`, plus room for the OS and model loading.
+When it isn't, the kernel's OOM killer ends a vLLM worker during startup, whatever the model.
+
+Measured on 2× Arc Pro B70 (32 GB each) in a 48 GB VM (Oct 2026):
+
+- TP=2 at util 0.90 claims about 58 GB of VRAM and is OOM-killed for every model tried, including Qwen3-8B.
+- TP=1 (Qwen3-8B) loads, with host RAM peaking at 33 GB.
+- Swap does not help. It drove the machine into a hang.
+
+An upstream `drm/xe` fix was still under review at the time of writing. Until it ships:
+
+- Give the machine RAM ≥ total VRAM × `GPU_MEMORY_UTILIZATION` (96 GB+ for 2× B70). This is expected to clear it but hasn't been verified on hardware yet.
+- Or run on one card (`GPU_COUNT=1`) and/or lower `GPU_MEMORY_UTILIZATION` in `.env`.
+- Or use the **Personal LLM** pack, which on Intel runs llama.cpp (SYCL) and isn't affected.
 
 ## Changing Models
 
