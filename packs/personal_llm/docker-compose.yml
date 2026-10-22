@@ -1,7 +1,9 @@
 services:
   # 1. Inference Engine
   inference:
-    image: ${OLLAMA_IMAGE:-ollama/ollama:0.21.0}
+    # 0.34.x: Qwen 3.8 needs it (0.21 answers the pull with 412 "requires a newer
+    # version of Ollama"). AMD and Intel replace this engine with llama.cpp (see overrides).
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.34.4}
     container_name: puget_ollama
     restart: unless-stopped
 
@@ -17,7 +19,10 @@ services:
       # Context window + KV cache. init.sh sets these memory-aware per model (scaled to
       # the VRAM headroom after weights) and writes them to .env; the defaults below apply
       # if .env is unset. Flash-attention is required for the quantized (q8) KV cache.
-      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-32768}
+      # Ollama reads OLLAMA_CONTEXT_LENGTH; it has no OLLAMA_NUM_CTX, so passing that name
+      # did nothing and the server fell back to its VRAM-based default (262K on a 64 GB
+      # box). The .env key stays OLLAMA_NUM_CTX so existing installs keep working.
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_NUM_CTX:-32768}
       - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
       - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
     volumes:
