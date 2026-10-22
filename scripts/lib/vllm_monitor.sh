@@ -72,8 +72,11 @@ wait_for_vllm() {
             break
         fi
 
-        # Check if API is responding (model fully loaded)
-        if curl -s --max-time 2 http://localhost:8000/v1/models > /dev/null 2>&1; then
+        # Check if API is responding (model fully loaded). -f is load-bearing: llama-server
+        # binds its socket BEFORE the model finishes loading and answers 503 ("Loading
+        # model") — without -f a 503 counts as ready. vLLM refuses connections until
+        # ready, so -f is a no-op there.
+        if curl -sf --max-time 2 http://localhost:8000/v1/models > /dev/null 2>&1; then
             local ELAPSED=$(( $(date +%s) - START_TIME ))
             local ELAPSED_MIN=$((ELAPSED / 60))
             local ELAPSED_SEC=$((ELAPSED % 60))
@@ -223,6 +226,32 @@ wait_for_vllm() {
             ERR=$(docker logs "$CONTAINER_NAME" 2>&1 | grep -iE "error|cuda|nccl|out of memory|timeout|deadlock" | tail -4)
             [ -n "$ERR" ] && { echo -e "${RED}  Recent log signals:${NC}"; echo "$ERR" | while IFS= read -r l; do echo -e "  ${YELLOW}${l}${NC}"; done; }
             break
+        fi
+
+        # ── Fatal-error fast path ────────────────────────────────────────────
+        # Some failures leave the engine dead while the container stays Up (e.g.
+        # Intel Level Zero DEVICE_LOST during memory profiling, or a worker
+        # RuntimeError with the parent process still alive) — no restart, so the
+        # crash-loop detector never fires, and waiting out the full stall window
+        # costs STALL_SECONDS per model. A terminal signature in the log tail
+        # combined with ≥30s of zero progress is decisive much sooner. The 30s
+        # gate avoids false positives while a restarting engine still shows the
+        # previous attempt's trace in its tail (an actively rebooting engine
+        # changes the logs, which resets LAST_PROGRESS_TIME above).
+        if [ $(( $(date +%s) - LAST_PROGRESS_TIME )) -ge 30 ]; then
+            local FATAL
+            FATAL=$(docker logs --tail 40 "$CONTAINER_NAME" 2>&1 | grep -m1 -E \
+                'UR_RESULT_ERROR_DEVICE_LOST|EngineCore failed to start|Failed to infer device type|RuntimeError: Worker failed|torch\.OutOfMemoryError|CUDA error: no kernel image|driver/library version mismatch|GGML_ASSERT|error loading model|failed to load model')
+            if [ -n "$FATAL" ]; then
+                echo ""
+                echo -e "${RED}✗ Inference engine hit a fatal error (container up, engine dead):${NC}"
+                echo -e "  ${YELLOW}${FATAL}${NC}"
+                echo "  Troubleshooting:"
+                echo -e "  ${BLUE}docker compose logs inference${NC}  - View full logs"
+                echo -e "  DEVICE_LOST usually means the GPU/driver crashed — check ${BLUE}sudo dmesg | tail${NC};"
+                echo -e "  a reboot may be needed before the GPU responds again."
+                break
+            fi
         fi
 
         sleep 3

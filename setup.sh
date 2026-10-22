@@ -8,6 +8,7 @@ set -euo pipefail
 # ANSI Color Codes
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
@@ -28,8 +29,10 @@ fi
 
 # Default to main if not specified
 BRANCH=${BRANCH:-main}
-REPO_URL="https://github.com/Puget-Systems/puget-docker-app-pack/archive/refs/heads/$BRANCH.tar.gz"
-PROJECT_NAME="puget-docker-app-pack"
+# Canonical repo slug is the PLURAL "puget-docker-app-packs" — the singular form
+# only works through GitHub's rename redirect, which breaks if the old name is
+# ever reclaimed. Keep this in sync with the README one-liner.
+REPO_URL="https://github.com/Puget-Systems/puget-docker-app-packs/archive/refs/heads/$BRANCH.tar.gz"
 
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${BLUE}   Puget Systems Docker App Pack - Bootstrap Installer${NC}"

@@ -1,0 +1,8 @@
+# Intel XPU GPU access for comfy_ui — layered over docker-compose.yml by install.sh.
+# Builds the XPU Dockerfile and passes the render node.
+services:
+  app:
+    build:
+      dockerfile: Dockerfile.xpu
+    devices:
+      - /dev/dri:/dev/dri

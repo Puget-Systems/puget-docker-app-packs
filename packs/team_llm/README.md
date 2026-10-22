@@ -1,20 +1,29 @@
 # Team LLM Pack
 
-Production-grade local LLM server for teams. Multi-GPU tensor parallelism with vLLM, serving an OpenAI-compatible API.
+Production-grade local LLM server for teams, serving an OpenAI-compatible API. NVIDIA/Intel run vLLM (multi-GPU tensor parallelism); AMD runs llama.cpp by default (layer-split GGUF — 2×+ faster than vLLM on RDNA4, where RCCL tensor parallelism is broken) with vLLM FP8 available via `TEAM_AMD_ENGINE=vllm`.
 
 ## Components
 
-1.  **The Engine (vLLM)**: High-throughput inference with tensor parallelism across multiple GPUs.
+1.  **The Engine**: vLLM (NVIDIA/Intel) or llama.cpp (AMD default) — high-throughput multi-GPU inference.
 2.  **The Interface (Open WebUI)**: ChatGPT-like interface connected via OpenAI API.
 3.  **The Brain (AutoGen)**: *Advanced Users*. Agent workflow engine for "Swarms of Experts".
 
 ## When to Use This Pack
 
 - **Multiple users** sharing one workstation or server
-- You need **multi-GPU tensor parallelism** (vLLM splits computation, not just memory)
+- You need **multi-GPU inference** (vLLM tensor parallelism; llama.cpp layer split on AMD)
 - You're serving a **single model in production** (less model swapping, more throughput)
 
 > For personal use with easy model swapping, see the **Personal LLM** pack.
+
+## Concurrency: vLLM vs llama.cpp (AMD)
+
+The two engines handle multi-user load very differently — this matters when sizing an AMD box:
+
+- **vLLM (NVIDIA/Intel)** auto-scales. PagedAttention serves many simultaneous requests out of one shared KV-cache pool, allocating context on demand — you don't pre-declare how many users to expect.
+- **llama.cpp (AMD default)** uses **static slots**. `MAX_CONTEXT` (`-c`) is a fixed KV pool split **evenly** across `--parallel N` slots, so **per-request context = `MAX_CONTEXT` ÷ `LLAMA_PARALLEL`**, and traffic is pre-segmented into those N slots. More slots = more concurrent requests but proportionally **less context each**.
+
+The AMD default is **2 slots** (one active chat + one background task), sized so each request keeps a large context window. To trade context for more concurrency, raise `LLAMA_PARALLEL` in `.env` (e.g. `4` on a dual-GPU box quarters per-request context but serves 4 at once). If your team genuinely needs many-user dynamic concurrency on AMD, the opt-in vLLM FP8 engine (`TEAM_AMD_ENGINE=vllm`) is the auto-scaling path — at lower single-stream throughput.
 
 ## Quick Start
 
@@ -53,7 +62,10 @@ The `init.sh` wizard offers these pre-configured options:
 | 7 | Gemma 4 (26B MoE AWQ) | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~18 GB | auto | 3.8B active, 256K context capable |
 | 8 | GPT-OSS (20B MoE MXFP4) | `openai/gpt-oss-20b` | ~16 GB | auto | OpenAI open-weight, Apache 2.0 |
 | 9 | GPT-OSS (120B MoE MXFP4) | `openai/gpt-oss-120b` | ~80 GB | auto | OpenAI flagship open-weight, Apache 2.0 |
-| 10 | Custom | User-specified | Varies | — | Any HuggingFace model ID |
+| 10 | Qwen 3.6 (27B NVFP4) | `unsloth/Qwen3.6-27B-NVFP4` | ~14 GB | auto | **Blackwell only.** FP4 tensor cores + MTP speculative decode; ~4–5× the FP16 27B on DGX Spark (22/78/134 tok/s @ conc 1/4/8). Pins vLLM `v0.25.0`. |
+| 11 | Custom | User-specified | Varies | — | Any HuggingFace model ID |
+
+> **NVFP4 (entry 11) is Blackwell-specific.** It needs vLLM ≥ 0.25.0 for the FlashInfer-Cutlass FP4 kernel on `sm_120`/`sm_121` (RTX 50-series, DGX Spark/GB10, B200), so the menu pins `vllm/vllm-openai:v0.25.0` instead of the rolling nightly. MTP speculative decoding (lossless) is switched on via `VLLM_ENABLE_MTP=1`, which makes the compose inject `--speculative-config`. On pre-Blackwell GPUs vLLM falls back to a slower Marlin path — use an AWQ entry there instead.
 
 ## Thinking Preservation (Qwen 3.6)
 
@@ -81,10 +93,30 @@ Benefits:
 
 | GPU Family | Architecture | CUDA | Docker Image | Status |
 |---|---|---|---|---|
-| RTX 4090 / A6000 | Ada (sm_89) | 12.6 | `vllm/vllm-openai:latest` | ✅ Full support |
-| RTX 5090 / PRO 6000 | Blackwell (sm_120) | 13.0 | `vllm/vllm-openai:cu130-nightly` | ✅ Full support |
+| RTX 4090 / A6000 | Ada (sm_89) | 13.0 | `vllm/vllm-openai:latest` / `nightly` | ✅ Full support |
+| RTX 5090 / PRO 6000, GB10, GB300 | Blackwell (sm_120/121/103) | 13.0 | `vllm/vllm-openai:latest` / `nightly` | ✅ Full support |
 
 The wizard automatically detects your GPU architecture and selects the correct Docker image.
+
+### Known issue: Intel Arc Pro needs host RAM to cover vLLM's VRAM
+
+On Intel (B-series, `xe` kernel driver), every buffer vLLM allocates on the GPU is also
+backed by an equal amount of system RAM. That includes the KV cache, which vLLM sizes to
+`GPU_MEMORY_UTILIZATION` of each card. Host RAM therefore has to be at least
+`GPU_COUNT × VRAM per card × GPU_MEMORY_UTILIZATION`, plus room for the OS and model loading.
+When it isn't, the kernel's OOM killer ends a vLLM worker during startup, whatever the model.
+
+Measured on 2× Arc Pro B70 (32 GB each) in a 48 GB VM (Oct 2026):
+
+- TP=2 at util 0.90 claims about 58 GB of VRAM and is OOM-killed for every model tried, including Qwen3-8B.
+- TP=1 (Qwen3-8B) loads, with host RAM peaking at 33 GB.
+- Swap does not help. It drove the machine into a hang.
+
+An upstream `drm/xe` fix was still under review at the time of writing. Until it ships:
+
+- Give the machine RAM ≥ total VRAM × `GPU_MEMORY_UTILIZATION` (96 GB+ for 2× B70). This is expected to clear it but hasn't been verified on hardware yet.
+- Or run on one card (`GPU_COUNT=1`) and/or lower `GPU_MEMORY_UTILIZATION` in `.env`.
+- Or use the **Personal LLM** pack, which on Intel runs llama.cpp (SYCL) and isn't affected.
 
 ## Changing Models
 

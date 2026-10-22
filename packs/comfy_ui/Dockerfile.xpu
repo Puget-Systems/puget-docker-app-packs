@@ -1,0 +1,78 @@
+# Dockerfile.xpu
+# Purpose: Build a ComfyUI container for Intel Arc Battlemage (B70/B580/B570)
+#          using the proven intel/vllm:0.14.1-xpu base image which provides
+#          a working PyTorch + IPEX + SYCL stack.
+#
+# Usage:
+#   docker build -f Dockerfile.xpu -t puget-comfy-xpu:b70 .
+#   docker run --rm -it --device /dev/dri \
+#       -v /path/to/models:/home/user/ComfyUI/models \
+#       -p 8188:8188 puget-comfy-xpu:b70
+
+ARG VLLM_BASE_IMAGE=intel/vllm:0.14.1-xpu
+FROM ${VLLM_BASE_IMAGE}
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Battlemage-compatible drivers from kobuk-team PPA
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gpg-agent \
+        curl \
+        clinfo \
+        git \
+        libgl1 \
+        libglib2.0-0 && \
+    add-apt-repository -y ppa:kobuk-team/intel-graphics && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        intel-opencl-icd \
+        libze-intel-gpu1 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Fix the environment by removing conflicting OneAPI ICD and libraries
+# (Same "split-brain" mitigation as our vLLM XPU image)
+RUN rm -f /etc/OpenCL/vendors/intel64.icd && \
+    find /opt/intel -name 'libintelocl.so' -delete
+
+# Remove automatic setvars.sh from .bashrc
+RUN sed -i '/setvars.sh/d' /root/.bashrc && \
+    sed -i '/vars.sh/d' /root/.bashrc
+
+# Battlemage environment variables
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/lib:$LD_LIBRARY_PATH
+ENV OCL_ICD_FILENAMES=
+ENV ONEAPI_DEVICE_SELECTOR=level_zero:gpu
+ENV SYCL_DEVICE_FILTER=level_zero:gpu
+ENV SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMAND_LISTS=0
+ENV ZES_ENABLE_SYSMAN=0
+ENV NEO_ReadDeviceBinaryBuiltins=0
+
+# Clone ComfyUI
+WORKDIR /home/user/ComfyUI
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git .
+
+# Install ComfyUI requirements using the pre-installed IPEX PyTorch
+# We skip torch/torchvision/torchaudio since the base image already has them
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install 3D node dependencies (fixes nodes_load_3d.py import errors)
+RUN pip install --no-cache-dir trimesh pygltflib numpy-stl
+
+# Create model directories for volume mounting
+RUN mkdir -p models/diffusion_models models/vae models/text_encoders \
+    models/checkpoints models/clip models/unet \
+    output input temp custom_nodes
+
+# Expose ComfyUI port
+EXPOSE 8188
+
+# Override the vLLM entrypoint from the base image
+ENTRYPOINT []
+
+# Launch ComfyUI listening on all interfaces
+CMD ["python3", "main.py", "--listen", "0.0.0.0"]

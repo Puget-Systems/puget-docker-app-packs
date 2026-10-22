@@ -1,0 +1,588 @@
+#!/bin/bash
+# Puget Systems — Shared vLLM Model Selection
+# Source this file; do not execute directly.
+#
+# Prerequisites: source gpu_detect.sh and call detect_gpus first.
+#   Required globals: GPU_COUNT, TOTAL_VRAM, VRAM_GB, NIGHTLY_PREFIX
+#   Required colors:  GREEN, BLUE, YELLOW, RED, NC
+#
+# Usage:
+#   show_vllm_model_menu          # prints the numbered model list
+#   select_vllm_model <choice>    # sets VLLM_* output vars, returns 0/1/2
+#
+# MTP knobs (entry 12 only; see _vllm_mtp_default):
+#   VLLM_ENABLE_MTP=1|0         operator override, read from the environment
+#   VLLM_SERVING_PROFILE=team|personal   picks the default when no override is set
+
+# Snapshot the operator's VLLM_ENABLE_MTP once, at source time. select_vllm_model
+# writes that same variable, so reading it on a later call would see the previous
+# entry's result instead of the environment (list_models.sh and validate_models.sh
+# call select_vllm_model in a loop).
+if [ -z "${_VLLM_MTP_ENV_CAPTURED:-}" ]; then
+    _VLLM_MTP_ENV="${VLLM_ENABLE_MTP:-}"
+    _VLLM_MTP_ENV_CAPTURED=1
+fi
+
+# _vllm_mtp_default: echo 1 or 0 for entries whose MTP is conditional.
+# An explicit VLLM_ENABLE_MTP in the environment wins. Otherwise the serving profile
+# decides: MTP speculative decoding helps single-stream latency but eats KV cache and
+# batch headroom, and its acceptance-rate win shrinks as concurrency climbs, so it
+# defaults ON for personal (single-user interactive) and OFF for team (multi-user).
+# team is the default profile because team_llm is the pack that serves vLLM.
+_vllm_mtp_default() {
+    case "$(printf '%s' "$_VLLM_MTP_ENV" | tr 'A-Z' 'a-z')" in
+        1|true|yes|on)  echo 1; return ;;
+        0|false|no|off) echo 0; return ;;
+    esac
+    case "${VLLM_SERVING_PROFILE:-team}" in
+        personal|personal_llm|single) echo 1 ;;
+        *)                            echo 0 ;;
+    esac
+}
+
+show_vllm_model_menu() {
+    echo "  1) Qwen 3.6 (35B MoE AWQ)     - Agentic reasoning, 128K ctx (~22 GB) [New]"
+
+    if [ "$TOTAL_VRAM" -ge 18 ]; then
+        echo "  2) Qwen 3.6 (27B Dense AWQ)   - Multimodal agentic, 262K ctx (~18 GB) [New]"
+    else
+        echo -e "  2) Qwen 3.6 (27B Dense AWQ)   - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 22 ]; then
+        echo "  3) Qwen 3.5 (35B MoE AWQ)     - 3B active params, 256K ctx (~22 GB)"
+    else
+        echo -e "  3) Qwen 3.5 (35B MoE AWQ)     - ${RED}Requires ~22 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 80 ]; then
+        echo "  4) Qwen 3.5 (122B MoE AWQ)    - Flagship, 10B active, 128K ctx (~60 GB) [Recommended]"
+    else
+        echo -e "  4) Qwen 3.5 (122B MoE AWQ)    - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 40 ]; then
+        echo "  5) DeepSeek R1 (70B AWQ)      - Reasoning specialist (~38 GB)"
+    else
+        echo -e "  5) DeepSeek R1 (70B AWQ)      - ${RED}Requires ~40 GB VRAM${NC}"
+    fi
+
+    echo "  6) Nemotron 3 Nano (30B MoE)   - 3B active, long context (~20 GB NVFP4)"
+    if [ "$TOTAL_VRAM" -ge 80 ]; then
+        echo "  7) Nemotron 3 Super (120B MoE) - 12B active, flagship (~60 GB NVFP4)"
+    else
+        echo -e "  7) Nemotron 3 Super (120B MoE) - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 20 ]; then
+        echo "  8) Gemma 4 (26B MoE AWQ)       - Google MoE Instruct, 3.8B active (~18 GB)"
+    else
+        echo -e "  8) Gemma 4 (26B MoE AWQ)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo "  9) GPT-OSS (20B MoE MXFP4)    - OpenAI open-weight, fast local inference (~16 GB)"
+
+    if [ "$TOTAL_VRAM" -ge 80 ]; then
+        echo " 10) GPT-OSS (120B MoE MXFP4)   - OpenAI flagship open-weight, 80 GB+"
+    else
+        echo -e " 10) GPT-OSS (120B MoE MXFP4)   - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 20 ]; then
+        echo " 11) Qwen 3.6 (27B NVFP4)       - Blackwell FP4 + MTP spec-decode, ~4-5x faster (~14 GB) [New]"
+    else
+        echo -e " 11) Qwen 3.6 (27B NVFP4)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 20 ]; then
+        echo " 12) Qwen 3.8 (27B NVFP4)       - Blackwell FP4 + MTP, hybrid attn, 262K ctx (~16 GB) [New]"
+    else
+        echo -e " 12) Qwen 3.8 (27B NVFP4)       - ${RED}Requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 24 ]; then
+        echo " 13) GLM 4.7 Flash (AWQ 4-bit)  - Zhipu MoE, thinking model (~20 GB) [New]"
+    else
+        echo -e " 13) GLM 4.7 Flash (AWQ 4-bit)  - ${RED}Requires ~24 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 260 ]; then
+        echo " 14) GLM 4.7 (355B MoE NVFP4)   - Flagship, NVIDIA first-party FP4 (~230 GB) [New]"
+    else
+        echo -e " 14) GLM 4.7 (355B MoE NVFP4)   - ${RED}Requires ~260 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 150 ]; then
+        echo " 15) Qwen 3 (235B MoE NVFP4)    - 22B active, NVIDIA first-party FP4 (~134 GB) [New]"
+    else
+        echo -e " 15) Qwen 3 (235B MoE NVFP4)    - ${RED}Requires ~150 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 200 ]; then
+        echo " 16) DeepSeek V4 Flash (FP8)    - Native FP8, MLA, 1M ctx (~167 GB) [New]"
+    else
+        echo -e " 16) DeepSeek V4 Flash (FP8)    - ${RED}Requires ~200 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 160 ]; then
+        echo " 17) Qwen 3.8 Flash-Next (NVFP4)- 180B MoE, Blackwell FP4 (~129 GB) [New]"
+    else
+        echo -e " 17) Qwen 3.8 Flash-Next (NVFP4)- ${RED}Requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 28 ]; then
+        echo " 18) Qwen 3.6 (35B MoE NVFP4)   - 3B active, NVIDIA first-party FP4 (~23 GB) [New]"
+    else
+        echo -e " 18) Qwen 3.6 (35B MoE NVFP4)   - ${RED}Requires ~28 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    if [ "$TOTAL_VRAM" -ge 240 ]; then
+        echo " 19) GLM 5.3 Flash (NVFP4)      - Glm5Next MoE, RedHatAI FP4 (~198 GB) [New]"
+    else
+        echo -e " 19) GLM 5.3 Flash (NVFP4)      - ${RED}Requires ~240 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo " 20) Custom                      - Enter a HuggingFace model ID"
+    echo " 21) Skip                        - I'll configure via .env later"
+    MENU_MAX=21
+}
+
+# select_vllm_model <choice>
+#   Sets: VLLM_MODEL_ID, VLLM_GPU_COUNT, VLLM_MODEL_SIZE_GB,
+#         VLLM_TOOL_CALL_ARGS, VLLM_REASONING_ARGS, VLLM_THINKING_ARGS,
+#         VLLM_EXTRA_ARGS, VLLM_DTYPE, VLLM_IMAGE, VLLM_GPU_MEM_UTIL, VLLM_MAX_CTX,
+#         VLLM_MIN_DRIVER (min NVIDIA driver major for the chosen image, empty = no gate)
+#   Returns: 0 = model selected, 1 = VRAM insufficient, 2 = skipped/custom
+select_vllm_model() {
+    local choice="$1"
+    # Common flags for MoE/nightly models that need eager mode
+    local EAGER_ARGS="--enforce-eager --no-enable-prefix-caching"
+
+    # Defaults
+    VLLM_MODEL_ID=""
+    VLLM_GPU_COUNT=$GPU_COUNT
+    VLLM_MODEL_SIZE_GB=0
+    VLLM_TOOL_CALL_ARGS=""
+    VLLM_REASONING_ARGS=""
+    VLLM_THINKING_ARGS=""
+    VLLM_EXTRA_ARGS=""
+    VLLM_ENABLE_MTP=""
+    VLLM_EXTRA_PIP=""
+    VLLM_GPU_MEM_UTIL_OVERRIDE=""
+    VLLM_DTYPE="auto"
+    VLLM_IMAGE="vllm/vllm-openai:v0.20.2"
+    VLLM_MAX_CTX=""
+
+    case $choice in
+        1)
+            # Qwen 3.6: standard attention (no GDN), so no --language-model-only needed.
+            # Context window scales with available VRAM — vLLM distributes KV cache across
+            # all GPUs via tensor parallelism, so multi-GPU setups unlock proportionally more context.
+            VLLM_MODEL_ID="cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_THINKING_ARGS="--default-chat-template-kwargs '{\"preserve_thinking\": true}'"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            VLLM_DTYPE="float16"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            local total_avail=$((TOTAL_VRAM))
+            if [ "$total_avail" -ge 48 ]; then
+                VLLM_MAX_CTX="262144"   # Full native 262K — comfortable on 48GB+
+            elif [ "$total_avail" -ge 24 ]; then
+                VLLM_MAX_CTX="131072"   # 128K — safe on single 24GB GPU
+            else
+                VLLM_MAX_CTX="65536"    # 64K — for tighter single-GPU setups
+            fi
+            ;;
+        2)
+            if [ "$TOTAL_VRAM" -lt 18 ]; then
+                echo -e "${RED}✗ Qwen 3.6 27B Dense AWQ requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="cyankiwi/Qwen3.6-27B-AWQ-INT4"; VLLM_MODEL_SIZE_GB=18
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            VLLM_DTYPE="float16"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            ;;
+        3)
+            VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            VLLM_DTYPE="float16"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            ;;
+        4)
+            if [ "$TOTAL_VRAM" -lt 80 ]; then
+                echo -e "${RED}✗ Qwen 3.5 122B MoE AWQ requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=60
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            VLLM_DTYPE="float16"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_MAX_CTX="131072"
+            ;;
+        5)
+            if [ "$TOTAL_VRAM" -lt 40 ]; then
+                echo -e "${RED}✗ DeepSeek R1 70B AWQ requires ~40 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="Valdemardi/DeepSeek-R1-Distill-Llama-70B-AWQ"; VLLM_MODEL_SIZE_GB=38
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            ;;
+        6)
+            VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"; VLLM_MODEL_SIZE_GB=25
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            ;;
+        7)
+            if [ "$TOTAL_VRAM" -lt 80 ]; then
+                echo -e "${RED}✗ Nemotron 3 Super NVFP4 requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"; VLLM_MODEL_SIZE_GB=60
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            ;;
+        8)
+            if [ "$TOTAL_VRAM" -lt 20 ]; then
+                echo -e "${RED}✗ Gemma 4 26B MoE AWQ requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"; VLLM_MODEL_SIZE_GB=18
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
+            VLLM_REASONING_ARGS="--reasoning-parser gemma4"
+            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            VLLM_DTYPE="float16"
+            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            ;;
+        9)
+            VLLM_MODEL_ID="openai/gpt-oss-20b"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser openai"
+            ;;
+        10)
+            if [ "$TOTAL_VRAM" -lt 80 ]; then
+                echo -e "${RED}✗ GPT-OSS 120B requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="openai/gpt-oss-120b"; VLLM_MODEL_SIZE_GB=80
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser openai"
+            ;;
+        11)
+            # Qwen 3.6 27B NVFP4 (unsloth) — Blackwell FP4 tensor-core quant + MTP
+            # speculative decoding. Benchmarked 2026-07-12 on DGX Spark (GB10, sm_121):
+            # 22.4 / 78.1 / 133.6 tok/s at conc 1/4/8 = ~4-5x the FP16 27B baseline
+            # (4.5 / 17.3 / 32.4), in ~14 GB vs ~54 GB. NVFP4 (compressed-tensors) needs
+            # vLLM >=0.25.0 for the FlashInfer-Cutlass FP4 kernel on sm_120/sm_121, so this
+            # entry PINS v0.25.0 rather than riding ${NIGHTLY_PREFIX} (which is older and
+            # lacks the kernel). VLLM_ENABLE_MTP switches on the MTP draft (the compose
+            # injects --speculative-config); speculative decoding is lossless. No eager
+            # mode — CUDA graphs are part of the speedup.
+            if [ "$TOTAL_VRAM" -lt 20 ]; then
+                echo -e "${RED}✗ Qwen 3.6 27B NVFP4 requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="unsloth/Qwen3.6-27B-NVFP4"; VLLM_MODEL_SIZE_GB=14
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_ENABLE_MTP="1"
+            VLLM_IMAGE="vllm/vllm-openai:v0.25.0"
+            ;;
+        12)
+            # Qwen 3.8 27B NVFP4 (unsloth) — successor to choice 11. Two things differ
+            # from the 3.6 NVFP4 entry and both drive the config below:
+            #
+            # 1. ARCH: hybrid attention (linear attention on 48 of 64 layers, full on 16)
+            #    plus a vision tower. That arch landed in vLLM main AFTER the v0.27.1
+            #    stable cut (2026-08-11) — the model published 2026-08-14 — so this entry
+            #    rides ${NIGHTLY_PREFIX} instead of pinning a release tag. Do NOT "fix"
+            #    this to a stable pin until a release ships the arch; a stable image
+            #    fails at load with an unrecognized model type.
+            # 2. TRANSFORMERS: needs >=5.8.0. VLLM_EXTRA_PIP makes the compose upgrade it
+            #    in-container before serving (no-op for every other entry, which leave it
+            #    empty). Drop it once the nightly image ships that floor on its own.
+            #
+            # NVFP4 GEMM kernels are sm_120+ only (FlashInfer-Cutlass), so this gates on
+            # compute capability as well as VRAM — on pre-Blackwell the weights load and
+            # then fail in the kernel selector, which is a confusing way to find out.
+            # MTP draft head is built into the checkpoint (compose injects
+            # --speculative-config when VLLM_ENABLE_MTP=1); speculative decoding is
+            # lossless. MTP is conditional here, not always-on: see _vllm_mtp_default
+            # (env override, else on for personal, off for team). No eager mode:
+            # CUDA graphs are part of the speedup. If a single 24 GB card OOMs during
+            # graph capture, add --enforce-eager via EXTRA_VLLM_ARGS in .env, and
+            # --kv-cache-dtype fp8 is the lever for pushing past the context set here.
+            # Blackwell is 10.x (datacenter: B200/GB200 sm_100, GB300 sm_103) OR
+            # 12.x (consumer/workstation: sm_120/sm_121). Gate on >= 10, not >= 12 —
+            # the old test rejected NVFP4 on GB200/GB300, the hardware best suited to it.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.8 27B NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                echo -e "  ${YELLOW}Use choice 2 (Qwen 3.6 27B AWQ) on this hardware.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 20 ]; then
+                echo -e "${RED}✗ Qwen 3.8 27B NVFP4 requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            # Image moved from ${NIGHTLY_PREFIX} to :latest on 2026-09-18. The arch
+            # has since landed in stable, verified against the running registry:
+            #   Qwen3_5ForConditionalGeneration  SUPPORTED
+            #   Qwen3_5MTP                       SUPPORTED   (MTP draft head)
+            # This is not cosmetic. On a GB300 the cu130-nightly line is vLLM 0.19.2,
+            # which has no sm_103 in its arch list and cannot serve the card at all,
+            # so the nightly pin was actively broken on the newest hardware.
+            #
+            # VLLM_EXTRA_PIP (transformers>=5.8.0) dropped with the same change: the
+            # stable image ships the floor natively now, and the hook cost an
+            # in-container pip install on every start.
+            VLLM_MODEL_ID="unsloth/Qwen3.8-27B-NVFP4"; VLLM_MODEL_SIZE_GB=23
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+            VLLM_REASONING_ARGS="--reasoning-parser qwen3"
+            VLLM_ENABLE_MTP="$(_vllm_mtp_default)"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            # KV cache is fp16 here, so context is sized to what's left after weights
+            # rather than the model's native 262K.
+            if [ "$TOTAL_VRAM" -ge 48 ]; then
+                VLLM_MAX_CTX="262144"
+            elif [ "$TOTAL_VRAM" -ge 32 ]; then
+                VLLM_MAX_CTX="131072"
+            else
+                VLLM_MAX_CTX="65536"
+            fi
+            ;;
+        13)
+            # GLM 4.7 Flash — Zhipu's small MoE (Glm4MoeLiteForCausalLM), AWQ 4-bit via
+            # compressed-tensors. Verified loading and serving on a GB300 (sm_103) with
+            # vLLM 0.28.0, 2026-09-09: engine init 149.8 s, full CUDA-graph capture.
+            #
+            # NO REASONING PARSER, deliberately. GLM 4.7 is a thinking model, and with a
+            # parser configured a reply still inside its thinking block returns empty
+            # content AND empty reasoning_content, which scores zero tokens in a
+            # benchmark. Left unset, the reasoning lands in content and measures
+            # correctly. Same trap the Spark Qwen3.6 runs hit from the other direction.
+            if [ "$TOTAL_VRAM" -lt 24 ]; then
+                echo -e "${RED}✗ GLM 4.7 Flash requires ~24 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="cyankiwi/GLM-4.7-Flash-AWQ-4bit"; VLLM_MODEL_SIZE_GB=20
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser glm45"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        14)
+            # GLM 4.7 flagship — 355B MoE (Glm4MoeForCausalLM), NVIDIA first-party NVFP4
+            # via modelopt. ~230 GB of weights, so this needs a 260 GB+ device: today
+            # that means GB300 (284 GB) or a multi-GPU box. The zai-org FP8 release is
+            # 362 GB and does NOT fit on a single GB300 — NVFP4 is the reason this entry
+            # exists at all.
+            #
+            # NVFP4 GEMMs need Blackwell (compute 10.x datacenter or 12.x workstation).
+            # No reasoning parser — see choice 13 for why.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ GLM 4.7 NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 260 ]; then
+                echo -e "${RED}✗ GLM 4.7 NVFP4 requires ~260 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                echo -e "  ${YELLOW}Use choice 13 (GLM 4.7 Flash) on this hardware.${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/GLM-4.7-NVFP4"; VLLM_MODEL_SIZE_GB=230
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser glm45"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        15)
+            # Qwen3 235B-A22B — NVIDIA first-party NVFP4 (modelopt), 22B active params.
+            # ~134 GB, so it fits a single 150 GB+ device (GB300) or a multi-GPU box.
+            # Blackwell-gated for the same NVFP4 kernel reason as choice 14.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen3 235B NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 150 ]; then
+                echo -e "${RED}✗ Qwen3 235B NVFP4 requires ~150 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/Qwen3-235B-A22B-NVFP4"; VLLM_MODEL_SIZE_GB=134
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        16)
+            # DeepSeek V4 Flash (0731 refresh) — the checkpoint DeepSeek actually
+            # ships, FP8 native, no third-party quant in the path. 167 GB, so it sits
+            # comfortably on a 277 GiB card where the FP8 releases of GLM-5.3 (328 GB)
+            # and DeepSeek-V4-Pro (865 GB) do not.
+            #
+            # Attention geometry is the reason to test it: 43 layers, ONE kv head,
+            # head_dim 512 (MLA), and max_position_embeddings 1,048,576. The KV cache
+            # per token is tiny relative to the weight footprint, which is exactly the
+            # regime a big-VRAM card is bought for. Do NOT size its KV with the dense
+            # GQA formula; measure it.
+            #
+            # Needs a vLLM that knows DeepseekV4ForCausalLM. :latest (0.28.0) is the
+            # floor we have tested for the other entries here; if the arch is missing
+            # the load fails fast with an unrecognised model type.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 9 ] 2>/dev/null; then
+                echo -e "${RED}✗ DeepSeek V4 Flash is an FP8 checkpoint and needs Hopper or newer (compute 9.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 200 ]; then
+                echo -e "${RED}✗ DeepSeek V4 Flash requires ~200 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="deepseek-ai/DeepSeek-V4-Flash-0731"; VLLM_MODEL_SIZE_GB=167
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser deepseek_v3"
+            # MANDATORY. The fp8_ds_mla attention layout refuses anything else:
+            #   AssertionError: DeepseekV4 fp8_ds_mla layout only supports fp8
+            #   kv-cache, got auto
+            # It is not a tuning knob, the engine will not start without it. It also
+            # halves the KV footprint, which is why this model holds 923,806 KV tokens
+            # against GLM 4.7's 172,864 while being only 26% smaller.
+            VLLM_EXTRA_ARGS="--kv-cache-dtype fp8"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            # 1M native context will not fit alongside 167 GB of weights. Size to what
+            # the remaining VRAM supports and raise it deliberately after measuring.
+            VLLM_MAX_CTX="131072"
+            ;;
+        17)
+            # Qwen 3.8 Flash-Next, NVFP4. Qwen's own release is 360 GB at bf16 and 186 GB
+            # at FP8; this modelopt NVFP4 conversion is 135 GB, the only one of the three
+            # with real headroom on a single card. THIRD-PARTY quant: unlike entry 16 there
+            # is no first-party low-bit checkpoint, so the G12 quality gate matters more
+            # here, not less. Verify against Qwen's own FP8 before quoting it.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.8 Flash-Next NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 160 ]; then
+                echo -e "${RED}✗ Qwen 3.8 Flash-Next NVFP4 requires ~160 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            # ARCH NOT IN THE STABLE IMAGE. Checked against the running registry on
+            # 2026-09-14: vllm/vllm-openai:latest (0.28.0) does NOT list
+            # Qwen4ExpForConditionalGeneration, so this model fails at load with an
+            # unrecognised model type. Same situation entry 12 documents, and the same
+            # remedy: ride the nightly line rather than pin a stable tag. Do not "fix"
+            # this back to :latest until a release ships the arch.
+            #
+            # Verify before trusting a run from this entry:
+            #   docker run --rm --entrypoint python3 <image> -c \
+            #     'from vllm.model_executor.models.registry import ModelRegistry; \
+            #      print("Qwen4ExpForConditionalGeneration" in ModelRegistry.get_supported_archs())'
+            VLLM_MODEL_ID="RadixArk/Qwen3.8-Flash-Next-NVFP4"; VLLM_MODEL_SIZE_GB=129
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            # :latest since 2026-09-23. vLLM 0.30.0 registers Qwen4ExpForConditionalGeneration,
+            # so the nightly workaround above is obsolete AND harmful: on a GB300
+            # ${NIGHTLY_PREFIX} resolves to cu130-nightly, which is vLLM 0.19.2 and fails at
+            # load with "model type `qwen4_exp` but Transformers does not recognize this
+            # architecture". Verified serving on 0.30.0 at util 0.82.
+            #
+            # 0.88 OOMs: vLLM sizes a 155.07 GiB KV pool against 153.68 GiB free. 0.82 still
+            # yields 4.48M KV tokens (109x concurrency at 40k), roughly double what a 64-user
+            # sweep needs.
+            VLLM_GPU_MEM_UTIL_OVERRIDE="0.82"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        18)
+            # Qwen 3.6 35B-A3B, NVIDIA first-party NVFP4. Small (23 GB) but current,
+            # and the useful counterweight to the flagship entries: on a 277 GiB card
+            # it leaves room for 6.2M KV tokens, 152x concurrency at 40k context,
+            # against 5.28x for GLM 4.7 at 355B. Same card, same context, thirty times
+            # the concurrent users. Report both ends or "it fits" means nothing.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ Qwen 3.6 35B NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 28 ]; then
+                echo -e "${RED}✗ Qwen 3.6 35B NVFP4 requires ~28 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="nvidia/Qwen3.6-35B-A3B-NVFP4"; VLLM_MODEL_SIZE_GB=23
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            ;;
+        19)
+            # GLM 5.3 Flash — Glm5NextForConditionalGeneration, RedHatAI's
+            # compressed-tensors NVFP4 conversion. 198 GB, the only GLM 5.3 release that
+            # fits a single 277 GiB card: zai-org's own FP8 is 328 GB and the bf16 is
+            # larger still.
+            #
+            # ARCH GATE. Checked against the running registry on 2026-09-24:
+            # vllm/vllm-openai:latest (0.30.0) DOES list Glm5NextForConditionalGeneration.
+            # 0.28.0 does not. Do not pin an older tag here or the load fails with an
+            # unrecognised model type.
+            #
+            # NVFP4 GEMMs need Blackwell. THIRD-PARTY quant like entry 17, so the G12
+            # quality gate is mandatory before quoting anything from this entry.
+            if [ "${COMPUTE_MAJOR:-0}" -lt 10 ] 2>/dev/null; then
+                echo -e "${RED}✗ GLM 5.3 Flash NVFP4 needs a Blackwell GPU (compute 10.0+); this box reports ${COMPUTE_CAP:-unknown}.${NC}"
+                return 1
+            fi
+            if [ "$TOTAL_VRAM" -lt 240 ]; then
+                echo -e "${RED}✗ GLM 5.3 Flash NVFP4 requires ~240 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
+                return 1
+            fi
+            VLLM_MODEL_ID="RedHatAI/GLM-5.3-Flash-NVFP4"; VLLM_MODEL_SIZE_GB=198
+            VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser glm47"
+            VLLM_IMAGE="vllm/vllm-openai:latest"
+            # 198 GB of weights on a 277 GiB card leaves the KV pool about 57 GiB at
+            # 0.92, which is what the weights-share heuristic picks anyway. Pinned so a
+            # later heuristic change cannot silently move it: GLM 4.7 OOMed during CUDA
+            # graph capture when this number went up, not when the pool did.
+            VLLM_GPU_MEM_UTIL_OVERRIDE="0.92"
+            VLLM_MAX_CTX="131072"
+            ;;
+        20)
+            read -p "  Enter HuggingFace model ID (owner/model): " VLLM_MODEL_ID
+            # Validate format: owner/model-name (letters, digits, dots, hyphens, underscores, colons)
+            if [[ ! "$VLLM_MODEL_ID" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._:-]+$ ]]; then
+                echo -e "${RED}✗ Invalid model ID format: '${VLLM_MODEL_ID}'${NC}"
+                echo "  Expected format: owner/model-name (e.g. cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit)"
+                VLLM_MODEL_ID=""
+                return 2
+            fi
+            return 2
+            ;;
+        *)
+            return 2
+            ;;
+    esac
+
+    # --- Auto-tune GPU memory utilization based on model size vs available VRAM ---
+    # An entry may pin VLLM_GPU_MEM_UTIL_OVERRIDE when the heuristic below is wrong for
+    # it. The heuristic keys off weights-as-a-share-of-VRAM, which does not see the KV
+    # pool vLLM will then try to allocate, so a model can sit in the "roomy" band and
+    # still OOM at startup. Measured on a GB300: Qwen 3.8 Flash-Next (129 GB of 277,
+    # i.e. 46% and therefore 0.90 by heuristic) asks for a 155.07 GiB KV pool against
+    # 153.68 GiB free and dies. 0.82 serves it with 4.48M KV tokens to spare.
+    local available_vram=$((VRAM_GB * VLLM_GPU_COUNT))
+    if [ -n "${VLLM_GPU_MEM_UTIL_OVERRIDE:-}" ]; then
+        VLLM_GPU_MEM_UTIL="$VLLM_GPU_MEM_UTIL_OVERRIDE"
+        VLLM_MIN_DRIVER=$(min_driver_for_image "$VLLM_IMAGE" 2>/dev/null || true)
+        return 0
+    fi
+    VLLM_GPU_MEM_UTIL="0.90"
+
+    if [ "$VLLM_MODEL_SIZE_GB" -gt 0 ] 2>/dev/null; then
+        local weight_pct=$((VLLM_MODEL_SIZE_GB * 100 / available_vram))
+
+        if [ "$weight_pct" -ge 85 ]; then
+            VLLM_GPU_MEM_UTIL="0.95"
+        elif [ "$weight_pct" -ge 70 ]; then
+            VLLM_GPU_MEM_UTIL="0.92"
+        fi
+    fi
+
+    # Minimum host driver for the image this entry resolved to (gpu_detect.sh helper)
+    VLLM_MIN_DRIVER=$(min_driver_for_image "$VLLM_IMAGE" 2>/dev/null || true)
+
+    return 0
+}

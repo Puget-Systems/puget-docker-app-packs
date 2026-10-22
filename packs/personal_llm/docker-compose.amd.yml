@@ -1,0 +1,79 @@
+# AMD ROCm Personal LLM — runs llama.cpp (llama-server), NOT Ollama.
+# llama.cpp splits multi-GPU work over direct HIP transfers (no RCCL, which is broken on
+# RDNA4) and serves an OpenAI-compatible API on :8000. This override replaces the engine
+# (image + entrypoint + command + port) and repoints the UI/brain from the Ollama API
+# (:11434) to the OpenAI API (:8000). Team LLM on AMD runs the same engine (see team_llm).
+# MODEL_ID / MAX_CONTEXT / LLAMA_PARALLEL / LLAMA_IMAGE come from .env (written by init.sh).
+services:
+  inference:
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-rocm}
+    entrypoint: ["/app/llama-server"]
+    command:
+      - "-hf"
+      - "${MODEL_ID:-unsloth/Qwen3.6-27B-GGUF:Q4_K_M}"
+      - "-ngl"
+      - "99"
+      # GPU split. Default LAYER (benchmarked 2026-07-09, dual R9700): matches row-split at
+      # concurrency 1 (23.4 tok/s on Qwen3.6-27B Q4), beats it at concurrency 4 (55.7 tok/s),
+      # and is crash-safe under concurrent decode. ROW aborts on Qwen3.6-family models under
+      # concurrent decode (GGML_ASSERT broadcast shapes) — single-stream/per-architecture use
+      # only. init.sh writes "none" on single-GPU boxes (nothing to split).
+      - "--split-mode"
+      - "${LLAMA_SPLIT_MODE:-layer}"
+      - "-fa"
+      - "on"
+      # Vision (mmproj) left ENABLED — verified harmless. Multimodal GGUFs get image input free.
+      # STATIC 2 slots (one active chat + one background task): llama.cpp splits -c evenly
+      # across --parallel N, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL. Raise
+      # LLAMA_PARALLEL in .env for more concurrency at the cost of per-request context.
+      - "--parallel"
+      - "${LLAMA_PARALLEL:-2}"
+      - "-c"
+      - "${MAX_CONTEXT:-32768}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--jinja"
+    ports:
+      - "8000:8000"
+    # Override the image's default healthcheck (which probes :8080) — llama-server is on :8000.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 1800s
+    environment:
+      # llama.cpp's -hf downloader 404s through the Olah mirror (get_repo_commit), so force
+      # DIRECT HuggingFace for GGUF — overrides any auto-detected HF_ENDPOINT in .env.
+      - HF_ENDPOINT=https://huggingface.co
+      - LLAMA_CACHE=/root/.cache/huggingface
+    volumes:
+      - ollama_data:/root/.cache/huggingface
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    group_add:
+      - video
+      - render
+
+  # Repoint Open WebUI from the Ollama API to llama-server's OpenAI-compatible API.
+  ui:
+    environment:
+      - OPENAI_API_BASE_URL=http://inference:8000/v1
+      - OPENAI_API_KEY=not-needed
+      - ENABLE_OLLAMA_API=false
+      - OLLAMA_BASE_URL=
+      - WEBUI_AUTH=false
+
+  # Brain (optional/advanced) assumes the Ollama API; point it at the OpenAI base so it at
+  # least resolves the right host. Swarm features that call Ollama-native endpoints won't
+  # apply under llama.cpp.
+  brain:
+    environment:
+      - OLLAMA_HOST=http://inference:8000

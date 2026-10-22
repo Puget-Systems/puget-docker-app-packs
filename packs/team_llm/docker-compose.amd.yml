@@ -1,0 +1,62 @@
+# AMD ROCm Team LLM — DEFAULT engine is llama.cpp (llama-server), not vLLM.
+# Benchmarked 2026-07-09 on dual R9700 (Qwen3.6-27B Q4_K_M): llama.cpp layer-split does
+# 23.4 / 55.7 / 56.0 tok/s at concurrency 1/4/8 vs vLLM FP16 PP=2 at 10.9 tok/s — llama.cpp
+# distributes multi-GPU work over direct HIP transfers, sidestepping the broken RCCL
+# collectives on RDNA4. Serves the same OpenAI-compatible API on :8000, so the base
+# compose's UI/brain wiring is unchanged. For the vLLM FP8 path (precision-sensitive
+# deployments), set TEAM_AMD_ENGINE=vllm — install.sh/init.sh then write
+# COMPOSE_FILE=docker-compose.yml:docker-compose.amd-vllm.yml instead of this file.
+# MODEL_ID / MAX_CONTEXT / LLAMA_PARALLEL / LLAMA_SPLIT_MODE / LLAMA_IMAGE come from .env.
+services:
+  inference:
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-rocm}
+    entrypoint: ["/app/llama-server"]
+    command:
+      - "-hf"
+      - "${MODEL_ID:-unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M}"
+      - "-ngl"
+      - "99"
+      # GPU split. Default LAYER: matches row-split single-stream, beats it at concurrency
+      # 4, and is crash-safe under concurrent decode (row aborts on Qwen3.6-family models —
+      # GGML_ASSERT broadcast shapes). init.sh writes "none" on single-GPU boxes.
+      - "--split-mode"
+      - "${LLAMA_SPLIT_MODE:-layer}"
+      - "-fa"
+      - "on"
+      # fp16 KV cache (no --cache-type flags): q8 KV degrades long-context tool use.
+      # STATIC slots (default 2), NOT vLLM-style auto-scaling: llama.cpp splits -c evenly
+      # across --parallel N, so per-request context = MAX_CONTEXT / LLAMA_PARALLEL. Raising
+      # slots adds concurrency but shrinks each request's context. (The opt-in vLLM engine
+      # — TEAM_AMD_ENGINE=vllm — auto-scales concurrency dynamically instead.)
+      - "--parallel"
+      - "${LLAMA_PARALLEL:-2}"
+      - "-c"
+      - "${MAX_CONTEXT:-65536}"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--jinja"
+    # Override the image's default healthcheck (which probes :8080) — llama-server is on :8000.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 1800s
+    environment:
+      # llama.cpp's -hf downloader 404s through the Olah mirror (get_repo_commit), so force
+      # DIRECT HuggingFace for GGUF — overrides any auto-detected HF_ENDPOINT in .env.
+      - HF_ENDPOINT=https://huggingface.co
+      # GGUFs land in the base compose's vllm_cache volume (mounted at this path).
+      - LLAMA_CACHE=/root/.cache/huggingface
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    group_add:
+      - video
+      - render

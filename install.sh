@@ -18,6 +18,7 @@ source "$INSTALLER_DIR/scripts/lib/smart_build.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_monitor.sh"
 source "$INSTALLER_DIR/scripts/lib/vllm_model_select.sh"
 source "$INSTALLER_DIR/scripts/lib/ollama_model_select.sh"
+source "$INSTALLER_DIR/scripts/lib/llama_menu_amd.sh"
 source "$INSTALLER_DIR/scripts/lib/env_write.sh"
 
 echo -e "${BLUE}============================================================${NC}"
@@ -136,183 +137,263 @@ echo -e "  Then ${RED}LOG OUT${NC} and back in for changes to take effect."
 echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Check for NVIDIA Drivers (required for GPU stacks)
-# We check if nvidia-smi exists AND returns success (0)
-if ! command -v nvidia-smi &> /dev/null || ! nvidia-smi &> /dev/null; then
-    echo -e "${RED}✗ NVIDIA drivers not detected (or not active).${NC}"
-    echo "  GPU-accelerated stacks (ComfyUI, Office Inference) require NVIDIA drivers."
-    
-    # Offer automated installation
-    read -p "  Would you like to install the recommended NVIDIA drivers now? (Y/n): " INSTALL_DRIVERS
-    if [[ "$INSTALL_DRIVERS" != "n" && "$INSTALL_DRIVERS" != "N" ]]; then
-        # Ensure ubuntu-drivers-common is available (pre-installed on Ubuntu, but verify)
-        if ! command -v ubuntu-drivers &> /dev/null; then
-            echo -e "${BLUE}Installing driver detection tools...${NC}"
-            sudo apt update && sudo apt install -y ubuntu-drivers-common
-        fi
-        
-        # Show detected GPU and recommended driver
-        echo -e "${BLUE}Detecting GPU hardware...${NC}"
-        ubuntu-drivers devices 2>/dev/null || true
-        echo ""
-        
-        echo -e "${BLUE}Installing recommended NVIDIA drivers for your GPU...${NC}"
-        DRIVER_OUTPUT=$(sudo ubuntu-drivers install 2>&1)
-        DRIVER_EXIT=$?
-        echo "$DRIVER_OUTPUT"
-        
-        if [ $DRIVER_EXIT -ne 0 ]; then
-            echo -e "${RED}✗ Driver installation failed.${NC}"
-            echo "  You may need to install drivers manually."
-            echo "  Try: sudo apt update && sudo ubuntu-drivers install"
-            exit 1
-        fi
-        
-        # Check if anything was actually installed (vs already at newest version)
-        if echo "$DRIVER_OUTPUT" | grep -qE "(0 newly installed|already the newest version|No drivers found)"; then
-            # Drivers are already installed but nvidia-smi still fails.
-            # This is NOT a "just reboot" situation — something deeper is wrong.
-            echo ""
-            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-            echo -e "${RED}⚠ NVIDIA drivers are installed but the GPU is not responding.${NC}"
-            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-            echo ""
-            echo "  The driver package is already installed, but nvidia-smi cannot"
-            echo "  communicate with the GPU. Common causes:"
-            echo ""
-            echo -e "  1. ${YELLOW}Secure Boot${NC} is blocking the unsigned NVIDIA kernel module."
-            echo "     Check:  mokutil --sb-state"
-            echo "     Fix:    sudo mokutil --disable-validation  (then reboot)"
-            echo ""
-            echo -e "  2. ${YELLOW}Kernel module not loaded${NC} after a kernel update."
-            echo "     Check:  lsmod | grep nvidia"
-            echo "     Fix:    sudo modprobe nvidia"
-            echo ""
-            echo -e "  3. ${YELLOW}Kernel/driver version mismatch${NC} (new kernel, old DKMS build)."
-            echo "     Fix:    sudo ubuntu-drivers install"
-            echo "             sudo dkms autoinstall"
-            echo "             Then reboot."
-            echo ""
-            echo -e "  4. ${YELLOW}Wrong driver variant${NC} for your GPU generation."
-            echo "     Check:  ubuntu-drivers devices"
-            echo "     (Blackwell/RTX 50 series requires the '-open' kernel module variant)"
-            echo ""
-            echo "  Resolve the issue above and re-run this installer."
-            exit 1
-        else
-            # Drivers were freshly installed — reboot is genuinely needed
-            echo -e "${YELLOW}⚠ IMPORTANT: Drivers installed.${NC}"
-            echo -e "${YELLOW}  You MUST REBOOT your system before the GPU will be available.${NC}"
-            echo "  Please reboot and run this installer again."
-            exit 0
-        fi
+# Check for GPU Drivers and Runtimes
+detect_gpus || true
+
+# Engine label for user-facing messages. Team LLM runs vLLM on NVIDIA/Intel; on AMD the
+# default is llama.cpp (layer-split GGUF — see llama_menu_amd.sh) with vLLM FP8 as the
+# opt-in TEAM_AMD_ENGINE=vllm path. Personal LLM's engine (Ollama, or llama.cpp on AMD)
+# is messaged from its own pack init.
+infer_engine_label() {
+    if [ "${GPU_VENDOR:-}" = "amd" ] && [ "${TEAM_AMD_ENGINE:-llama}" != "vllm" ]; then
+        echo "llama.cpp"
     else
-        echo "  Skipping driver installation. GPU containers may fail to start."
+        echo "vLLM"
     fi
-else
-    DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-    GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-    echo -e "${GREEN}✓ NVIDIA Driver found: $DRIVER_VERSION ($GPU_NAME)${NC}"
-fi
+}
 
-# Check for NVIDIA Container Toolkit (required for GPU access)
-# Use `command -v nvidia-ctk` — dpkg -l can falsely report packages as present
-# when they are in a "desired but not installed" (un) state.
-if ! command -v nvidia-ctk &> /dev/null; then
-    echo -e "${RED}✗ NVIDIA Container Toolkit is not installed.${NC}"
-    echo "  This is required for Docker to access NVIDIA GPUs."
-    read -p "  Would you like to install NVIDIA Container Toolkit now? (Y/n): " INSTALL_NVIDIA
-    if [[ "$INSTALL_NVIDIA" != "n" && "$INSTALL_NVIDIA" != "N" ]]; then
-        echo -e "${BLUE}Installing NVIDIA Container Toolkit...${NC}"
-        # Add NVIDIA repo (--yes allows re-runs without "file already exists" error)
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
-            sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-            sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-            sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-        sudo apt update && sudo apt install -y nvidia-container-toolkit
-        echo -e "${GREEN}✓ NVIDIA Container Toolkit installed.${NC}"
+if [ "$GPU_VENDOR" == "amd" ]; then
+    echo -e "${GREEN}✓ AMD GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
+    echo -e "${BLUE}Checking AMD ROCm / amdgpu access...${NC}"
+    # The ROCm app-pack containers (vLLM-ROCm, ComfyUI Dockerfile.rocm) ship their own
+    # ROCm userspace; the host only needs the amdgpu kernel driver (which exposes /dev/kfd
+    # and the render nodes) plus render/video group membership for device passthrough.
+    if [ -e /dev/kfd ] && ls /dev/dri/renderD* > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ amdgpu compute interface present (/dev/kfd + render nodes).${NC}"
+    else
+        echo -e "${RED}✗ /dev/kfd or /dev/dri/renderD* missing — the amdgpu kernel driver is not active.${NC}"
+        echo "  Install the AMD GPU driver / ROCm (https://rocm.docs.amd.com) and reboot, then re-run."
     fi
-else
-    echo -e "${GREEN}✓ NVIDIA Container Toolkit found.${NC}"
-fi
-
-# Hard gate: GPU stacks CANNOT work without the Container Toolkit.
-# Fail early with a clear message instead of a cryptic Docker error at launch.
-if ! command -v nvidia-ctk &> /dev/null; then
-    echo ""
-    echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${RED}✗ NVIDIA Container Toolkit is required but not installed.${NC}"
-    echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "  Without it, Docker cannot access NVIDIA GPUs and GPU-accelerated"
-    echo "  containers (Ollama, vLLM, ComfyUI) will fail to start with:"
-    echo ""
-    echo -e "  ${YELLOW}could not select device driver \"nvidia\" with capabilities: [[gpu]]${NC}"
-    echo ""
-    echo "  Install manually with:"
-    echo -e "  ${BLUE}curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \\"
-    echo -e "    sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
-    echo -e "  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\"
-    echo -e "    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \\"
-    echo -e "    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
-    echo -e "  sudo apt update && sudo apt install -y nvidia-container-toolkit${NC}"
-    echo ""
-    echo "  Then re-run this installer."
-    exit 1
-fi
-
-# ALWAYS configure Docker for NVIDIA GPU access.
-# nvidia-ctk runtime configure is idempotent — safe to run every time.
-# We run it unconditionally because `docker info | grep nvidia` can false-positive
-# on the GPU device name (e.g. "NVIDIA GeForce RTX 5090") even when the runtime
-# is NOT actually registered.
-if command -v nvidia-ctk &> /dev/null && command -v docker &> /dev/null; then
-    echo -e "${BLUE}Configuring Docker for NVIDIA GPU access...${NC}"
-    sudo nvidia-ctk runtime configure --runtime=docker
-    sudo systemctl restart docker
-
-    # Wait for Docker to restart
-    echo "Waiting for Docker to restart..."
-    for i in {1..15}; do
-        if docker info &> /dev/null 2>&1; then
-            break
+    # Container device passthrough needs the invoking user in the render/video groups.
+    for _grp in render video; do
+        if ! id -nG "${USER:-$(id -un)}" 2>/dev/null | grep -qw "$_grp"; then
+            echo -e "${YELLOW}⚠ ${USER} is not in the '${_grp}' group — adding it (needed for GPU device access).${NC}"
+            sudo usermod -aG "$_grp" "$USER" 2>/dev/null && echo "  Added to '${_grp}' (log out and back in for it to take effect)." || true
         fi
-        sleep 1
     done
 
-    echo -e "${GREEN}✓ Docker GPU runtime configured.${NC}"
-
-    # Verify GPU access with a real container — this is the definitive test.
-    echo "Verifying GPU access in Docker (this may pull an image on first run)..."
-    if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi &> /dev/null; then
-        echo -e "${GREEN}✓ GPU accessible from Docker.${NC}"
+elif [ "$GPU_VENDOR" == "intel" ]; then
+    echo -e "${GREEN}✓ Intel ARC GPU detected: $GPU_NAME (${GPU_COUNT}x)${NC}"
+    echo -e "${BLUE}Checking Intel Compute Runtime...${NC}"
+    
+    # Level Zero ships as libze-intel-gpu1 on current Ubuntu (what we install below) and
+    # as intel-level-zero-gpu on older releases; accept either. Query each by name rather
+    # than `dpkg -l | grep -q`, which under pipefail can fail on SIGPIPE even when found.
+    INTEL_L0_FOUND=false
+    for _pkg in libze-intel-gpu1 intel-level-zero-gpu; do
+        if dpkg-query -W -f='${Status}' "$_pkg" 2>/dev/null | grep -q "ok installed"; then
+            INTEL_L0_FOUND=true
+            break
+        fi
+    done
+    if [ "$INTEL_L0_FOUND" != true ]; then
+        echo -e "${RED}✗ Intel Level Zero / Compute Runtime not fully installed.${NC}"
+        read -p "  Would you like to install Intel Compute Runtime now? (Y/n): " INSTALL_INTEL
+        if [[ "$INSTALL_INTEL" != "n" && "$INSTALL_INTEL" != "N" ]]; then
+            sudo apt update
+            sudo apt install -y intel-opencl-icd libze-intel-gpu1 intel-media-va-driver-non-free clinfo
+            echo -e "${GREEN}✓ Intel Compute Runtime installed.${NC}"
+        else
+            echo "  Skipping driver installation. GPU containers may fail to start."
+        fi
     else
+        echo -e "${GREEN}✓ Intel Compute Runtime found.${NC}"
+    fi
+
+    # Check for render nodes
+    if ! ls /dev/dri/renderD* 1> /dev/null 2>&1; then
+        echo -e "${RED}✗ Cannot access /dev/dri/renderD*. Docker passthrough will fail.${NC}"
+    else
+        echo -e "${GREEN}✓ GPU Render nodes available.${NC}"
+    fi
+
+elif [ "$GPU_VENDOR" == "nvidia" ] || command -v nvidia-smi &> /dev/null; then
+    # We check if nvidia-smi exists AND returns success (0)
+    if ! command -v nvidia-smi &> /dev/null || ! nvidia-smi &> /dev/null; then
+        echo -e "${RED}✗ NVIDIA drivers not detected (or not active).${NC}"
+        echo "  GPU-accelerated stacks (ComfyUI, Office Inference) require NVIDIA drivers."
+        
+        # Offer automated installation
+        read -p "  Would you like to install the recommended NVIDIA drivers now? (Y/n): " INSTALL_DRIVERS
+        if [[ "$INSTALL_DRIVERS" != "n" && "$INSTALL_DRIVERS" != "N" ]]; then
+            # Ensure ubuntu-drivers-common is available (pre-installed on Ubuntu, but verify)
+            if ! command -v ubuntu-drivers &> /dev/null; then
+                echo -e "${BLUE}Installing driver detection tools...${NC}"
+                sudo apt update && sudo apt install -y ubuntu-drivers-common
+            fi
+            
+            # Show detected GPU and recommended driver
+            echo -e "${BLUE}Detecting GPU hardware...${NC}"
+            ubuntu-drivers devices 2>/dev/null || true
+            echo ""
+            
+            echo -e "${BLUE}Installing recommended NVIDIA drivers for your GPU...${NC}"
+            DRIVER_OUTPUT=$(sudo ubuntu-drivers install 2>&1)
+            DRIVER_EXIT=$?
+            echo "$DRIVER_OUTPUT"
+            
+            if [ $DRIVER_EXIT -ne 0 ]; then
+                echo -e "${RED}✗ Driver installation failed.${NC}"
+                echo "  You may need to install drivers manually."
+                echo "  Try: sudo apt update && sudo ubuntu-drivers install"
+                exit 1
+            fi
+            
+            # Check if anything was actually installed (vs already at newest version)
+            if echo "$DRIVER_OUTPUT" | grep -qE "(0 newly installed|already the newest version|No drivers found)"; then
+                # Drivers are already installed but nvidia-smi still fails.
+                # This is NOT a "just reboot" situation — something deeper is wrong.
+                echo ""
+                echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+                echo -e "${RED}⚠ NVIDIA drivers are installed but the GPU is not responding.${NC}"
+                echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+                echo ""
+                echo "  The driver package is already installed, but nvidia-smi cannot"
+                echo "  communicate with the GPU. Common causes:"
+                echo ""
+                echo -e "  1. ${YELLOW}Secure Boot${NC} is blocking the unsigned NVIDIA kernel module."
+                echo "     Check:  mokutil --sb-state"
+                echo "     Fix:    sudo mokutil --disable-validation  (then reboot)"
+                echo ""
+                echo -e "  2. ${YELLOW}Kernel module not loaded${NC} after a kernel update."
+                echo "     Check:  lsmod | grep nvidia"
+                echo "     Fix:    sudo modprobe nvidia"
+                echo ""
+                echo -e "  3. ${YELLOW}Kernel/driver version mismatch${NC} (new kernel, old DKMS build)."
+                echo "     Fix:    sudo ubuntu-drivers install"
+                echo "             sudo dkms autoinstall"
+                echo "             Then reboot."
+                echo ""
+                echo -e "  4. ${YELLOW}Wrong driver variant${NC} for your GPU generation."
+                echo "     Check:  ubuntu-drivers devices"
+                echo "     (Blackwell/RTX 50 series requires the '-open' kernel module variant)"
+                echo ""
+                echo "  Resolve the issue above and re-run this installer."
+                exit 1
+            else
+                # Drivers were freshly installed — reboot is genuinely needed
+                echo -e "${YELLOW}⚠ IMPORTANT: Drivers installed.${NC}"
+                echo -e "${YELLOW}  You MUST REBOOT your system before the GPU will be available.${NC}"
+                echo "  Please reboot and run this installer again."
+                exit 0
+            fi
+        else
+            echo "  Skipping driver installation. GPU containers may fail to start."
+        fi
+    else
+        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+        GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+        echo -e "${GREEN}✓ NVIDIA Driver found: $DRIVER_VERSION ($GPU_NAME)${NC}"
+    fi
+
+    # Check for NVIDIA Container Toolkit (required for GPU access)
+    # Use `command -v nvidia-ctk` — dpkg -l can falsely report packages as present
+    # when they are in a "desired but not installed" (un) state.
+    if ! command -v nvidia-ctk &> /dev/null; then
+        echo -e "${RED}✗ NVIDIA Container Toolkit is not installed.${NC}"
+        echo "  This is required for Docker to access NVIDIA GPUs."
+        read -p "  Would you like to install NVIDIA Container Toolkit now? (Y/n): " INSTALL_NVIDIA
+        if [[ "$INSTALL_NVIDIA" != "n" && "$INSTALL_NVIDIA" != "N" ]]; then
+            echo -e "${BLUE}Installing NVIDIA Container Toolkit...${NC}"
+            # Add NVIDIA repo (--yes allows re-runs without "file already exists" error)
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+                sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+                sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+            sudo apt update && sudo apt install -y nvidia-container-toolkit
+            echo -e "${GREEN}✓ NVIDIA Container Toolkit installed.${NC}"
+        fi
+    else
+        echo -e "${GREEN}✓ NVIDIA Container Toolkit found.${NC}"
+    fi
+
+    # Hard gate: GPU stacks CANNOT work without the Container Toolkit.
+    # Fail early with a clear message instead of a cryptic Docker error at launch.
+    if ! command -v nvidia-ctk &> /dev/null; then
         echo ""
         echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-        echo -e "${RED}✗ Docker cannot access the NVIDIA GPU.${NC}"
+        echo -e "${RED}✗ NVIDIA Container Toolkit is required but not installed.${NC}"
         echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
         echo ""
-        echo "  The NVIDIA driver works (nvidia-smi passed), and the Container"
-        echo "  Toolkit is installed, but Docker still cannot access the GPU."
+        echo "  Without it, Docker cannot access NVIDIA GPUs and GPU-accelerated"
+        echo "  containers (Ollama, vLLM, ComfyUI) will fail to start with:"
         echo ""
-        echo "  Common causes:"
-        echo -e "  1. ${YELLOW}Reboot required${NC} — the toolkit was just installed and the"
-        echo "     kernel modules need to be reloaded."
-        echo -e "     Fix: ${BLUE}sudo reboot${NC}, then re-run this installer."
+        echo -e "  ${YELLOW}could not select device driver \"nvidia\" with capabilities: [[gpu]]${NC}"
         echo ""
-        echo -e "  2. ${YELLOW}Toolkit/driver version mismatch${NC} — the container toolkit"
-        echo "     version may not support this driver."
-        echo -e "     Check: ${BLUE}nvidia-ctk --version${NC}"
-        echo -e "     Fix:   ${BLUE}sudo apt update && sudo apt install --reinstall nvidia-container-toolkit${NC}"
+        echo "  Install manually with:"
+        echo -e "  ${BLUE}curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \\"
+        echo -e "    sudo gpg --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
+        echo -e "  curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\"
+        echo -e "    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \\"
+        echo -e "    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
+        echo -e "  sudo apt update && sudo apt install -y nvidia-container-toolkit${NC}"
         echo ""
-        echo -e "  3. ${YELLOW}Docker daemon config conflict${NC} — /etc/docker/daemon.json"
-        echo "     may have a conflicting configuration."
-        echo -e "     Check: ${BLUE}cat /etc/docker/daemon.json${NC}"
-        echo ""
-        echo "  After fixing, re-run this installer."
+        echo "  Then re-run this installer."
         exit 1
     fi
+
+    # Configure Docker for NVIDIA GPU access, unless the runtime is already registered.
+    # The restart bounces every container on the host, so a re-run on a box that is
+    # already serving (a GB300 with vLLM up, a Spark running the HF mirror) must not do it.
+    # Ask docker for its registered runtime NAMES: a plain `docker info | grep nvidia`
+    # false-positives on the GPU device name (e.g. "NVIDIA GeForce RTX 5090") even when
+    # the runtime is NOT registered. If docker info fails (user not in the docker group
+    # yet), the list is empty and we configure, as before.
+    if command -v nvidia-ctk &> /dev/null && command -v docker &> /dev/null; then
+        DOCKER_RUNTIMES=$(docker info --format '{{range $name, $_ := .Runtimes}}{{$name}} {{end}}' 2>/dev/null || true)
+        if [[ " $DOCKER_RUNTIMES " == *" nvidia "* ]]; then
+            echo -e "${GREEN}✓ Docker NVIDIA runtime already configured (no restart needed).${NC}"
+        else
+            echo -e "${BLUE}Configuring Docker for NVIDIA GPU access...${NC}"
+            sudo nvidia-ctk runtime configure --runtime=docker
+            sudo systemctl restart docker
+
+            # Wait for Docker to restart
+            echo "Waiting for Docker to restart..."
+            for i in {1..15}; do
+                if docker info &> /dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+
+            echo -e "${GREEN}✓ Docker GPU runtime configured.${NC}"
+        fi
+
+        # Verify GPU access with a real container — this is the definitive test.
+        echo "Verifying GPU access in Docker (this may pull an image on first run)..."
+        if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi &> /dev/null; then
+            echo -e "${GREEN}✓ GPU accessible from Docker.${NC}"
+        else
+            echo ""
+            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+            echo -e "${RED}✗ Docker cannot access the NVIDIA GPU.${NC}"
+            echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
+            echo ""
+            echo "  The NVIDIA driver works (nvidia-smi passed), and the Container"
+            echo "  Toolkit is installed, but Docker still cannot access the GPU."
+            echo ""
+            echo "  Common causes:"
+            echo -e "  1. ${YELLOW}Reboot required${NC} — the toolkit was just installed and the"
+            echo "     kernel modules need to be reloaded."
+            echo -e "     Fix: ${BLUE}sudo reboot${NC}, then re-run this installer."
+            echo ""
+            echo -e "  2. ${YELLOW}Toolkit/driver version mismatch${NC} — the container toolkit"
+            echo "     version may not support this driver."
+            echo -e "     Check: ${BLUE}nvidia-ctk --version${NC}"
+            echo -e "     Fix:   ${BLUE}sudo apt update && sudo apt install --reinstall nvidia-container-toolkit${NC}"
+            echo ""
+            echo -e "  3. ${YELLOW}Docker daemon config conflict${NC} — /etc/docker/daemon.json"
+            echo "     may have a conflicting configuration."
+            echo -e "     Check: ${BLUE}cat /etc/docker/daemon.json${NC}"
+            echo ""
+            echo "  After fixing, re-run this installer."
+            exit 1
+        fi
+    fi
+else
+    echo -e "${YELLOW}⚠ No NVIDIA or Intel GPUs detected. Only CPU workloads will be supported.${NC}"
 fi
 
 # Re-check after potential installs
@@ -672,7 +753,12 @@ case $FLAVOR in
         echo -e "Run ${BLUE}./${INSTALL_DIR}/init.sh${NC} at any time to reconfigure."
         ;;
     personal_llm)
-        echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
+        # AMD and Intel Personal run llama.cpp (OpenAI API), NVIDIA runs Ollama.
+        if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
+            echo -e "${GREEN}Personal LLM (llama.cpp + Open WebUI)${NC}"
+        else
+            echo -e "${GREEN}Personal LLM (Ollama + Open WebUI)${NC}"
+        fi
         echo ""
         # Cache Proxy Configuration (optional)
         prompt_env_proxy "$INSTALL_DIR/.env" || true
@@ -690,10 +776,34 @@ case $FLAVOR in
             VRAM_GB=0
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, cannot detect VRAM.${NC}"
         fi
+
+        # llama.cpp needs MODEL_ID in .env BEFORE launch (it downloads via -hf at startup),
+        # unlike Ollama which pulls into the running container. So select + write env here,
+        # pre-launch; the AMD/Intel compose overrides read MODEL_ID/MAX_CONTEXT/LLAMA_PARALLEL.
+        if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
+            echo ""
+            echo -e "${YELLOW}Select a model:${NC}"
+            echo ""
+            show_llama_model_menu
+            echo ""
+            read -p "Select [1-${MENU_MAX}]: " LL_CHOICE
+            LL_RC=0
+            select_llama_model "$LL_CHOICE" || LL_RC=$?
+            if [ "$LL_RC" -eq 0 ] && [ -n "${LLAMA_MODEL_ID:-}" ]; then
+                write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" "$INSTALL_DIR/.env"
+                write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" "$INSTALL_DIR/.env"
+                write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-2}" "$INSTALL_DIR/.env"
+                write_env_var "LLAMA_SPLIT_MODE" "${LLAMA_SPLIT_MODE:-layer}" "$INSTALL_DIR/.env"
+                write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" "$INSTALL_DIR/.env"
+                echo -e "${GREEN}  ✓ ${LLAMA_MODEL_ID} (ctx ${LLAMA_MAX_CTX}, ${LLAMA_PARALLEL:-2} slots, split=${LLAMA_SPLIT_MODE:-layer}) → .env${NC}"
+            else
+                echo -e "${YELLOW}  No model selected — set MODEL_ID in .env before launch.${NC}"
+            fi
+        fi
         ;;
     team_llm)
-        echo -e "${GREEN}Team LLM (vLLM + Open WebUI)${NC}"
-        echo "Production inference with multi-GPU tensor parallelism."
+        echo -e "${GREEN}Team LLM ($(infer_engine_label) + Open WebUI)${NC}"
+        echo "Production multi-GPU inference."
         echo ""
         # Cache Proxy Configuration (optional)
         prompt_env_proxy "$INSTALL_DIR/.env" || true
@@ -712,6 +822,41 @@ case $FLAVOR in
             echo -e "${YELLOW}  ⚠ nvidia-smi not found, defaulting to 1 GPU.${NC}"
         fi
         echo ""
+        # AMD Team default engine is llama.cpp (layer-split GGUF): benchmarked 2026-07-09
+        # on dual R9700 it is 2.1× vLLM FP16 PP=2 single-user (23.4 vs 10.9 tok/s on
+        # Qwen3.6-27B) and ~5× at concurrency 8 (56 tok/s aggregate). vLLM FP8 stays as an
+        # opt-in escape hatch: TEAM_AMD_ENGINE=vllm ./install.sh, or the menu entry below.
+        # Like personal_llm, MODEL_ID must be in .env BEFORE launch (llama-server downloads
+        # via -hf at startup); the AMD compose override reads the LLAMA_* vars.
+        TEAM_AMD_ENGINE="${TEAM_AMD_ENGINE:-llama}"
+        if [ "${GPU_VENDOR:-}" = "amd" ] && [ "$TEAM_AMD_ENGINE" != "vllm" ]; then
+            echo -e "${YELLOW}Select a model to serve:${NC}"
+            echo ""
+            LLAMA_MIN_CTX_PER_SLOT=16384   # team tool use needs a bigger per-request window
+            show_llama_model_menu
+            echo "  $((MENU_MAX+1))) Advanced: use the vLLM (FP8) engine instead of llama.cpp"
+            echo ""
+            read -p "Select [1-$((MENU_MAX+1))]: " LL_CHOICE
+            if [ "$LL_CHOICE" = "$((MENU_MAX+1))" ]; then
+                TEAM_AMD_ENGINE="vllm"
+            else
+                LL_RC=0
+                select_llama_model "$LL_CHOICE" || LL_RC=$?
+                write_env_var "TEAM_AMD_ENGINE" "llama" "$INSTALL_DIR/.env"
+                if [ "$LL_RC" -eq 0 ] && [ -n "${LLAMA_MODEL_ID:-}" ]; then
+                    write_env_var "MODEL_ID" "$LLAMA_MODEL_ID" "$INSTALL_DIR/.env"
+                    write_env_var "MAX_CONTEXT" "$LLAMA_MAX_CTX" "$INSTALL_DIR/.env"
+                    write_env_var "LLAMA_PARALLEL" "${LLAMA_PARALLEL:-2}" "$INSTALL_DIR/.env"
+                    write_env_var "LLAMA_SPLIT_MODE" "${LLAMA_SPLIT_MODE:-layer}" "$INSTALL_DIR/.env"
+                    write_env_var "LLAMA_IMAGE" "$LLAMA_IMAGE" "$INSTALL_DIR/.env"
+                    echo -e "${GREEN}  ✓ ${LLAMA_MODEL_ID} (ctx ${LLAMA_MAX_CTX} total, ${LLAMA_PARALLEL:-2} slots → $((LLAMA_MAX_CTX / ${LLAMA_PARALLEL:-2}))/request, split=${LLAMA_SPLIT_MODE:-layer}) → .env${NC}"
+                else
+                    echo -e "${YELLOW}  No model selected — set MODEL_ID in .env before launch.${NC}"
+                fi
+            fi
+        fi
+        if [ "${GPU_VENDOR:-}" != "amd" ] || [ "$TEAM_AMD_ENGINE" = "vllm" ]; then
+        [ "${GPU_VENDOR:-}" = "amd" ] && write_env_var "TEAM_AMD_ENGINE" "vllm" "$INSTALL_DIR/.env"
         # Model Selection (uses shared library)
         echo -e "${YELLOW}Select a model to serve:${NC}"
         echo ""
@@ -720,6 +865,21 @@ case $FLAVOR in
         read -p "Select [1-${MENU_MAX}]: " VLLM_MODEL_SELECT
 
         if select_vllm_model "$VLLM_MODEL_SELECT"; then
+            # Memory-aware context cap. When the menu leaves MAX_CONTEXT unset, a model's
+            # native context (often 128K-262K) can need more KV cache than fits after the
+            # weights load, and vLLM crash-loops ("max seq len needs N GiB KV cache >
+            # available"). Size the cap to the VRAM left after weights: small models keep
+            # their native context (ample headroom), large models are capped so the KV
+            # cache fits. Mirrors the bench's smart KV-cache cap.
+            if [ -z "${VLLM_MAX_CTX:-}" ]; then
+                _free_vram=$(awk "BEGIN{printf \"%d\", ${TOTAL_VRAM:-0} * ${VLLM_GPU_MEM_UTIL:-0.90} - ${VLLM_MODEL_SIZE_GB:-0}}")
+                if   [ "$_free_vram" -ge 30 ]; then VLLM_MAX_CTX=""       # ample room → native context
+                elif [ "$_free_vram" -ge 16 ]; then VLLM_MAX_CTX=65536
+                elif [ "$_free_vram" -ge 8 ];  then VLLM_MAX_CTX=32768
+                else                                VLLM_MAX_CTX=16384
+                fi
+                [ -n "$VLLM_MAX_CTX" ] && echo -e "  ${YELLOW}Context capped to ${VLLM_MAX_CTX} (KV-cache headroom after ~${VLLM_MODEL_SIZE_GB:-?}GB of weights)${NC}"
+            fi
             write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
             write_env_var "VLLM_IMAGE" "$VLLM_IMAGE" "$INSTALL_DIR/.env"
             write_env_var "GPU_COUNT" "$VLLM_GPU_COUNT" "$INSTALL_DIR/.env"
@@ -729,13 +889,31 @@ case $FLAVOR in
             write_env_var "THINKING_ARGS" "$VLLM_THINKING_ARGS" "$INSTALL_DIR/.env"
             write_env_var "TOOL_CALL_ARGS" "$VLLM_TOOL_CALL_ARGS" "$INSTALL_DIR/.env"
             write_env_var "EXTRA_VLLM_ARGS" "$VLLM_EXTRA_ARGS" "$INSTALL_DIR/.env"
+            # Compose tests VLLM_ENABLE_MTP with ${VAR:+...}, so "0" would still turn
+            # MTP on. Write "1" or nothing.
+            write_env_var "VLLM_ENABLE_MTP" "$([ "${VLLM_ENABLE_MTP:-}" = 1 ] && echo 1)" "$INSTALL_DIR/.env"
+            write_env_var "VLLM_EXTRA_PIP" "${VLLM_EXTRA_PIP:-}" "$INSTALL_DIR/.env"
             write_env_var "DTYPE" "$VLLM_DTYPE" "$INSTALL_DIR/.env"
+            write_env_var "NCCL_P2P_DISABLE" "${VLLM_NCCL_P2P_DISABLE:-1}" "$INSTALL_DIR/.env"
             echo -e "${GREEN}✓ Model: $VLLM_MODEL_ID (${VLLM_GPU_COUNT} GPU(s))${NC}"
-            ctx_display=${VLLM_MAX_CTX:-auto (vLLM will size based on available VRAM)}
+            ctx_display=${VLLM_MAX_CTX:-model native (ample VRAM headroom)}
             echo -e "  Memory: ${VLLM_GPU_MEM_UTIL} utilization, ${ctx_display} context"
             PARSER_NAME=$(echo "$VLLM_TOOL_CALL_ARGS" | grep -oE 'tool-call-parser [^ ]+' | awk '{print $2}' || echo "hermes")
             echo -e "  Tool calls: enabled ($PARSER_NAME parser)"
             echo -e "  The model will download on first launch."
+            
+            # --- Custom Build for Intel B70 ---
+            if [[ "$VLLM_IMAGE" == "puget-vllm-xpu:b70" ]]; then
+                echo ""
+                echo -e "${BLUE}Checking for custom Intel B70 container image...${NC}"
+                if [[ "$(docker images -q puget-vllm-xpu:b70 2> /dev/null)" == "" ]]; then
+                    echo -e "${YELLOW}Building puget-vllm-xpu:b70 (this may take 5-10 minutes)...${NC}"
+                    (cd "$INSTALL_DIR" && docker build -t puget-vllm-xpu:b70 -f Dockerfile.xpu .)
+                    echo -e "${GREEN}✓ Image built successfully.${NC}"
+                else
+                    echo -e "${GREEN}✓ Custom Intel B70 image already exists.${NC}"
+                fi
+            fi
         elif [ -n "$VLLM_MODEL_ID" ]; then
             # Custom model (return code 2) — write what we have
             write_env_var "MODEL_ID" "$VLLM_MODEL_ID" "$INSTALL_DIR/.env"
@@ -743,6 +921,7 @@ case $FLAVOR in
             echo -e "  Edit .env to configure GPU count, context, and memory settings."
         else
             echo "Skipping model configuration. Edit .env before starting."
+        fi
         fi
         ;;
     docker-base)
@@ -760,6 +939,28 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     echo -e "${BLUE}Building and starting container in background...${NC}"
     cd "$INSTALL_DIR"
 
+    # Layer the per-vendor GPU compose override (device mounts / runtime / vendor Dockerfile)
+    # over the GPU-agnostic base. PERSIST it in .env (not just export) so EVERY docker compose
+    # call — this installer, init.sh, a container restart, or a manual `docker compose up` —
+    # applies the override. An ephemeral export only covers this script's own launch, which
+    # left containers with no /dev/kfd → "Failed to infer device type" on AMD. docker compose
+    # reads COMPOSE_FILE from .env; relative paths resolve against the pack dir it runs from.
+    # GPU-agnostic packs (e.g. docker-base) and unknown GPUs have no override → base only.
+    # NOTE: cwd is already "$INSTALL_DIR" (we cd'd above) and INSTALL_DIR may be RELATIVE
+    # (e.g. "team_llm"), so reference the override + .env relative to cwd — prepending
+    # "$INSTALL_DIR/" here would double the path ("team_llm/team_llm/...") and silently skip.
+    _GPU_OVERRIDE="docker-compose.${GPU_VENDOR:-none}.yml"
+    # Team AMD with the opt-in vLLM engine uses its own override (the default
+    # docker-compose.amd.yml is the llama.cpp engine swap).
+    if [ "$FLAVOR" = "team_llm" ] && [ "${GPU_VENDOR:-}" = "amd" ] && [ "${TEAM_AMD_ENGINE:-llama}" = "vllm" ]; then
+        _GPU_OVERRIDE="docker-compose.amd-vllm.yml"
+    fi
+    if [ -n "${GPU_VENDOR:-}" ] && [ -f "$_GPU_OVERRIDE" ]; then
+        write_env_var "COMPOSE_FILE" "docker-compose.yml:${_GPU_OVERRIDE}" ".env"
+        export COMPOSE_FILE="docker-compose.yml:${_GPU_OVERRIDE}"
+        echo -e "${BLUE}GPU profile: ${GPU_VENDOR} (compose override: ${_GPU_OVERRIDE})${NC}"
+    fi
+
     # Validate .env before launch — catch stacking/corruption early
     if ! validate_env ".env"; then
         echo -e "${RED}Fix .env issues before launching.${NC}"
@@ -773,24 +974,21 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
     # or conflicting names we know about (like puget_comfy_ui)
     docker compose down 2>/dev/null || true
     
-    # Check for ALL known container name conflicts.
-    # docker compose down only removes containers from the CURRENT project.
-    # If the user previously installed to a different directory, those orphan
-    # containers keep running under the old project name and cause
-    # "name already in use" errors on `docker compose up`.
-    declare -A PACK_CONTAINERS=(
-        [comfy_ui]="puget_comfy_ui"
-        [team_llm]="puget_vllm puget_team_webui puget_team_brain"
-        [personal_llm]="puget_ollama puget_personal_webui"
-    )
-    CONFLICT_NAMES="${PACK_CONTAINERS[$FLAVOR]:-}"
-    if [ -n "$CONFLICT_NAMES" ]; then
-        for CNAME in $CONFLICT_NAMES; do
-            if docker ps -a --format '{{.Names}}' | grep -q "^${CNAME}$"; then
-                echo -e "${YELLOW}⚠ Removing existing container '${CNAME}' to avoid name conflict...${NC}"
-                docker rm -f "$CNAME" 2>/dev/null || true
+    # Specifically check for the comfy_ui conflict the user saw
+    if [ "$FLAVOR" == "comfy_ui" ]; then
+        if docker ps -a --format '{{.Names}}' | grep -q "^puget_comfy_ui$"; then
+            echo -e "${YELLOW}⚠ Conflict: A container named 'puget_comfy_ui' already exists.${NC}"
+            read -p "  Would you like to remove the existing container to continue? (y/N): " REMOVE_CONFLICT
+            if [[ "$REMOVE_CONFLICT" == "y" || "$REMOVE_CONFLICT" == "Y" ]]; then
+                echo -e "${BLUE}Removing existing container 'puget_comfy_ui'...${NC}"
+                docker rm -f puget_comfy_ui 2>/dev/null || true
+            else
+                echo -e "${RED}Error: Cannot launch because of name conflict.${NC}"
+                echo "Please stop/remove the existing container or choose a different installation name."
+                cd - > /dev/null
+                exit 1
             fi
-        done
+        fi
     fi
 
     # Smart rebuild: detect if build files changed → --no-cache rebuild
@@ -819,54 +1017,64 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                 echo -e "  Local:   ${BLUE}http://localhost:3000${NC}"
                 echo -e "  Network: ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
-                echo "Select a starter model to download:"
-                echo ""
-                show_ollama_model_menu
-                echo ""
-                read -p "Select a model [1-${MENU_MAX}]: " MODEL_SELECT
-
-                MODEL_TAG=""
-                OLLAMA_SELECT_RC=0
-                select_ollama_model "$MODEL_SELECT" || OLLAMA_SELECT_RC=$?
-
-                if [ $OLLAMA_SELECT_RC -eq 0 ]; then
-                    MODEL_TAG="$OLLAMA_MODEL_TAG"
-                elif [ $OLLAMA_SELECT_RC -eq 1 ]; then
-                    # VRAM insufficient — message already printed
-                    MODEL_TAG=""
+                # AMD/Intel = llama.cpp: the model was set in .env pre-launch and downloads
+                # via -hf at container start. No `ollama pull` (no ollama in the image).
+                # Just wait for the OpenAI server to come up.
+                if [ "${GPU_VENDOR:-}" = "amd" ] || [ "${GPU_VENDOR:-}" = "intel" ]; then
+                    echo -e "${BLUE}llama.cpp is downloading the model and starting (5–30 min)...${NC}"
+                    wait_for_vllm "puget_ollama" "${LLAMA_MODEL_SIZE_GB:-0}" || true
+                    echo -e "  When ready, pick the model from the dropdown at ${BLUE}http://localhost:3000${NC}"
                 else
-                    echo "Skipping model download."
+                    echo "Select a starter model to download:"
+                    echo ""
+                    show_ollama_model_menu
+                    echo ""
+                    read -p "Select a model [1-${MENU_MAX}]: " MODEL_SELECT
+
                     MODEL_TAG=""
-                fi
+                    OLLAMA_SELECT_RC=0
+                    select_ollama_model "$MODEL_SELECT" || OLLAMA_SELECT_RC=$?
 
-                if [[ -n "$MODEL_TAG" ]]; then
-                     if ! wait_for_ollama; then
-                         MODEL_TAG=""
-                     fi
-                fi
+                    if [ $OLLAMA_SELECT_RC -eq 0 ]; then
+                        MODEL_TAG="$OLLAMA_MODEL_TAG"
+                    elif [ $OLLAMA_SELECT_RC -eq 1 ]; then
+                        # VRAM insufficient — message already printed
+                        MODEL_TAG=""
+                    else
+                        echo "Skipping model download."
+                        MODEL_TAG=""
+                    fi
 
-                if [[ -n "$MODEL_TAG" ]]; then
-                     echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
-                     docker compose exec -T inference ollama pull "$MODEL_TAG"
-                     echo -e "${GREEN}✓ Model ready.${NC}"
-                else
-                     echo -e "Run ${BLUE}./init.sh${NC} later to download models."
+                    if [[ -n "$MODEL_TAG" ]]; then
+                         if ! wait_for_ollama; then
+                             MODEL_TAG=""
+                         fi
+                    fi
+
+                    if [[ -n "$MODEL_TAG" ]]; then
+                         echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
+                         docker compose exec -T inference ollama pull "$MODEL_TAG"
+                         echo -e "${GREEN}✓ Model ready.${NC}"
+                    else
+                         echo -e "Run ${BLUE}./init.sh${NC} later to download models."
+                    fi
                 fi
                 ;;
             team_llm)
                 LOCAL_IP=$(hostname -I | awk '{print $1}')
-                echo -e "\n${GREEN}vLLM server is starting...${NC}"
+                echo -e "\n${GREEN}$(infer_engine_label) server is starting...${NC}"
                 echo -e "  Chat UI:  ${BLUE}http://localhost:3000${NC}"
                 echo -e "  API:      ${BLUE}http://localhost:8000/v1${NC}"
                 echo -e "  Network:  ${BLUE}http://${LOCAL_IP}:3000${NC}"
                 echo ""
                 
-                # Wait for model download and loading with progress
-                if [ -n "$VLLM_MODEL_ID" ]; then
+                # Wait for model download and loading with progress (vLLM or the AMD
+                # llama.cpp engine — same container name, same :8000 OpenAI API).
+                if [ -n "${VLLM_MODEL_ID:-}" ] || [ -n "${LLAMA_MODEL_ID:-}" ]; then
                     echo -e "${YELLOW}Waiting for model to download and load...${NC}"
                     echo "  (This may take 5-30 minutes depending on model size and bandwidth)"
                     echo ""
-                    wait_for_vllm "puget_vllm" "$VLLM_MODEL_SIZE_GB"
+                    wait_for_vllm "puget_vllm" "${VLLM_MODEL_SIZE_GB:-${LLAMA_MODEL_SIZE_GB:-0}}"
                 fi
                 
                 echo -e "  Re-configure model: ${BLUE}./init.sh${NC}"

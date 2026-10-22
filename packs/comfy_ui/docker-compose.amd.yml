@@ -1,0 +1,13 @@
+# AMD ROCm GPU access for comfy_ui — layered over docker-compose.yml by install.sh.
+# Builds the ROCm Dockerfile and passes the kfd + render nodes (no default runtime on AMD).
+services:
+  app:
+    build:
+      dockerfile: Dockerfile.rocm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
