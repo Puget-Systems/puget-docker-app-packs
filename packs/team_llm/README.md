@@ -106,15 +106,16 @@ backed by an equal amount of system RAM. That includes the KV cache, which vLLM 
 `GPU_COUNT × VRAM per card × GPU_MEMORY_UTILIZATION`, plus room for the OS and model loading.
 When it isn't, the kernel's OOM killer ends a vLLM worker during startup, whatever the model.
 
-Measured on 2× Arc Pro B70 (32 GB each) in a 48 GB VM (Oct 2026):
+Measured on 2× Arc Pro B70 (32 GB each) in a VM (Oct 2026):
 
-- TP=2 at util 0.90 claims about 58 GB of VRAM and is OOM-killed for every model tried, including Qwen3-8B.
-- TP=1 (Qwen3-8B) loads, with host RAM peaking at 33 GB.
+- 48 GB RAM: TP=2 at util 0.90 claims about 58 GB of VRAM and is OOM-killed for every model tried, including Qwen3-8B.
+- 48 GB RAM: TP=1 (Qwen3-8B) loads, with host RAM peaking at 33 GB.
+- 80 GB RAM: TP=2 at util 0.90 (Qwen3-8B) loads in about 4 minutes. Host RAM peaks at 70 GB and stays there while serving.
 - Swap does not help. It drove the machine into a hang.
 
 An upstream `drm/xe` fix was still under review at the time of writing. Until it ships:
 
-- Give the machine RAM ≥ total VRAM × `GPU_MEMORY_UTILIZATION` (96 GB+ for 2× B70). This is expected to clear it but hasn't been verified on hardware yet.
+- Give the machine RAM ≥ total VRAM × `GPU_MEMORY_UTILIZATION` plus about 12 GB. For 2× B70 that's 80 GB, which is verified.
 - Or run on one card (`GPU_COUNT=1`) and/or lower `GPU_MEMORY_UTILIZATION` in `.env`.
 - Or use the **Personal LLM** pack, which on Intel runs llama.cpp (SYCL) and isn't affected.
 
