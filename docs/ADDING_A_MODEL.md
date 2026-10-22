@@ -44,7 +44,8 @@ Models must be added to **both** the shared library and all callers.
 - [ ] Add VRAM gate: `if [ "$TOTAL_VRAM" -lt <min_gb> ]; then ... return 1; fi`
 - [ ] **Driver requirement:** `VLLM_MIN_DRIVER` is derived automatically from
       `VLLM_IMAGE` by `min_driver_for_image()` in `scripts/lib/gpu_detect.sh`
-      (cu130 → driver ≥580, cu128/cu129 and stable → ≥570). If the image line
+      (CUDA 13.0 images, which today is every `vllm/vllm-openai` tag → driver ≥580;
+      cu128/cu129 → ≥570). If the image line
       moves to a new CUDA release, update that one mapping — every menu and the
       bench inherit it.
 
