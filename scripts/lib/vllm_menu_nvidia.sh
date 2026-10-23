@@ -222,7 +222,9 @@ select_vllm_model() {
             VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=60
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            # No eager flags: CUDA graphs and prefix caching serve correctly here on 2x RTX PRO 6000, and eager mode
+            # cost 2.75x or more single-user tok/s on the hosts tested (#9).
+            VLLM_EXTRA_ARGS="--language-model-only"
             VLLM_DTYPE="float16"
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             VLLM_MAX_CTX="131072"
@@ -250,7 +252,8 @@ select_vllm_model() {
             VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"; VLLM_MODEL_SIZE_GB=60
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            # No eager flags: CUDA graphs and prefix caching serve correctly here on 2x RTX PRO 6000, and eager mode
+            # cost 7.2x single-user tok/s (#9).
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         8)
