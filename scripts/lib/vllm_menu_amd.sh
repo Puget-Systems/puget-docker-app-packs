@@ -3,7 +3,7 @@
 # Source this file; do not execute directly.
 #
 # Prerequisites: source gpu_detect.sh and call detect_gpus first.
-#   Required globals: GPU_VENDOR, GPU_COUNT, TOTAL_VRAM, VRAM_GB, NIGHTLY_PREFIX
+#   Required globals: GPU_VENDOR, GPU_COUNT, TOTAL_VRAM, VRAM_GB
 #   Required colors:  GREEN, BLUE, YELLOW, RED, NC
 #
 # Usage:

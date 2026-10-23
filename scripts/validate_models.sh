@@ -15,7 +15,6 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RED=''; GREEN=''; YELLOW=''; NC=''   # color vars the libs expect (no-op in CI)
-NIGHTLY_PREFIX="nightly"
 
 # Fake a huge multi-vendor box so VRAM gates never hide a menu item from validation.
 GPU_VENDOR="${GPU_VENDOR:-nvidia}"; TOTAL_VRAM=1000000; VRAM_GB=1000000; GPU_COUNT=8
@@ -62,14 +61,22 @@ check_ollama() {  # tag like qwen3:8b  (best-effort: warns, doesn't fail the bui
 }
 
 echo "== vLLM menu (branch: $(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')) =="
+[ -n "${VLLM_NIGHTLY_IMAGE:-}" ] && echo "   nightly pin: $VLLM_NIGHTLY_IMAGE (CUDA ${VLLM_NIGHTLY_CUDA:-?})"
 if declare -f show_vllm_model_menu >/dev/null; then
     show_vllm_model_menu >/dev/null 2>&1   # sets MENU_MAX
     for c in $(seq 1 "${MENU_MAX:-14}"); do
-        VLLM_MODEL_ID=""
+        VLLM_MODEL_ID=""; VLLM_IMAGE=""; VLLM_MIN_DRIVER=""
         # </dev/null so the interactive "Custom" item reads EOF and skips instead of hanging.
         select_vllm_model "$c" </dev/null >/dev/null 2>&1 || true
         [ -z "$VLLM_MODEL_ID" ] && continue            # Custom / Skip / unset
         check_hf "vllm[$c]" "$VLLM_MODEL_ID"
+        # Every NVIDIA vLLM image needs a known driver floor. Empty means the image's CUDA
+        # line has no row in min_driver_for_cuda (gpu_detect.sh) — e.g. a nightly pin bump
+        # onto a new CUDA release — and the install would skip the driver gate silently.
+        if [ "$GPU_VENDOR" = "nvidia" ] && [[ "$VLLM_IMAGE" == *vllm-openai* ]] && [ -z "$VLLM_MIN_DRIVER" ]; then
+            printf '  DRV  %-12s %s  (no driver floor for this image — update min_driver_for_cuda)\n' "vllm[$c]" "$VLLM_IMAGE"
+            fail=1
+        fi
     done
 fi
 
@@ -102,6 +109,6 @@ echo ""
 if [ "$fail" -eq 0 ]; then
     echo "✓ All vLLM model repos reachable."
 else
-    echo "✗ One or more model repos are missing/gated (see above)."
+    echo "✗ One or more model repos are missing/gated, or an image has no driver floor (see above)."
 fi
 exit "$fail"

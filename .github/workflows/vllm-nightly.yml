@@ -1,0 +1,257 @@
+name: vllm-nightly
+
+# Keep the pinned vLLM nightly healthy. The pin is VLLM_NIGHTLY_IMAGE (+ VLLM_NIGHTLY_CUDA)
+# at the top of scripts/lib/gpu_detect.sh: a tag@digest ref into our GHCR mirror, because
+# upstream `vllm/vllm-openai:nightly` moves daily and vLLM prunes old `nightly-<sha>` tags.
+#
+#   check-pin  Fails loudly if the pinned ref no longer resolves (manifest check only, no
+#              pull). Anonymous on purpose: customers pull anonymously, so a package that
+#              went private fails here too.
+#   candidate  Resolves upstream `nightly` (or the `upstream_tag` input). If it differs from
+#              the pin, mirrors it to GHCR (registry-to-registry, multi-arch index and
+#              digest preserved) and opens/updates ONE rolling PR that bumps the pin, labeled
+#              needs-gpu-validation. It never merges: a human merges after a GPU test pass.
+#
+# Bootstrap / re-mirror a specific build: run via workflow_dispatch with upstream_tag set,
+# e.g. nightly-e68efc685ab1e6f1eda004ced7157e3ca411da2f.
+on:
+  schedule:
+    - cron: '41 10 * * *'   # ~10:41 UTC daily. Schedules only run from the default branch.
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'vllm/vllm-openai tag to mirror (e.g. nightly-<full-sha>). Empty = current nightly.'
+        required: false
+        default: ''
+  pull_request:
+    paths:
+      - 'scripts/lib/gpu_detect.sh'
+      - '.github/workflows/vllm-nightly.yml'
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM: index.docker.io/vllm/vllm-openai
+  MIRROR: ghcr.io/puget-systems/vllm-openai
+  PIN_FILE: scripts/lib/gpu_detect.sh
+  BASE_BRANCH: develop                       # candidate PRs target develop, like every PR
+  CANDIDATE_BRANCH: bot/vllm-nightly-candidate
+  CANDIDATE_LABEL: needs-gpu-validation
+  CRANE_VERSION: v0.20.2
+
+jobs:
+  check-pin:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # On a PR check the PR's own pin; otherwise every branch customers or devs install from.
+        ref: ${{ github.event_name == 'pull_request' && fromJSON('[""]') || fromJSON('["main","develop"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          fetch-depth: 1
+      - uses: imjasonh/setup-crane@v0.4
+        with:
+          version: ${{ env.CRANE_VERSION }}
+      - name: Resolve pinned image ${{ matrix.ref }}
+        env:
+          REF_NAME: ${{ matrix.ref || github.head_ref }}
+        run: |
+          pin=$(bash -c 'source "$1" >/dev/null 2>&1; printf %s "${VLLM_NIGHTLY_IMAGE:-}"' _ "$PIN_FILE")
+          if [ -z "$pin" ]; then
+            echo "::notice title=skip::No VLLM_NIGHTLY_IMAGE in $PIN_FILE on '$REF_NAME' yet."
+            exit 0
+          fi
+          tag_ref="${pin%@*}"; digest="${pin##*@}"; repo="${tag_ref%:*}"
+          echo "pin: $pin"
+          # 1. The digest itself must resolve — this is what docker actually pulls.
+          if ! manifest=$(crane manifest "$repo@$digest" 2>&1); then
+            echo "::error title=vLLM nightly pin is unpullable::$pin does not resolve: $manifest"
+            exit 1
+          fi
+          # 2. It must still be the multi-arch index we mirrored (amd64 at minimum).
+          if ! jq -e '.manifests[]? | select(.platform.os == "linux" and .platform.architecture == "amd64")' <<<"$manifest" >/dev/null; then
+            echo "::error title=vLLM nightly pin is not a linux/amd64 index::$pin"
+            exit 1
+          fi
+          # 3. The tag should still point at it (tags in our mirror are never moved).
+          tag_digest=$(crane digest "$tag_ref" 2>/dev/null || true)
+          if [ "$tag_digest" != "$digest" ]; then
+            echo "::error title=vLLM nightly pin tag drifted::$tag_ref -> '${tag_digest:-missing}', pin says $digest"
+            exit 1
+          fi
+          echo "✓ $pin resolves anonymously"
+
+  candidate:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120          # the copy streams ~2 platforms of multi-GB layers
+    concurrency:
+      group: vllm-nightly-candidate
+      cancel-in-progress: false
+    permissions:
+      contents: write             # push the rolling candidate branch
+      packages: write             # push the mirror to GHCR
+      pull-requests: write        # open/update the candidate PR
+      issues: write               # create the label on first use
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 1
+      - uses: imjasonh/setup-crane@v0.4
+        with:
+          version: ${{ env.CRANE_VERSION }}
+
+      - name: Resolve upstream build
+        id: up
+        run: |
+          src_tag="${UPSTREAM_TAG:-nightly}"
+          if ! [[ "$src_tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Invalid upstream_tag '$src_tag'"; exit 1
+          fi
+          digest=$(crane digest "$UPSTREAM:$src_tag")
+          cfg=$(crane config --platform linux/amd64 "$UPSTREAM@$digest")
+          commit=$(jq -r '.config.Labels["org.opencontainers.image.revision"] // empty' <<<"$cfg")
+          [ -n "$commit" ] || commit=$(jq -r '.config.Env[] | select(startswith("VLLM_BUILD_COMMIT=")) | sub("^VLLM_BUILD_COMMIT="; "")' <<<"$cfg" | head -1)
+          cuda=$(jq -r '.config.Env[] | select(startswith("CUDA_VERSION=")) | sub("^CUDA_VERSION="; "")' <<<"$cfg" | head -1)
+          if ! [[ "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not read the vLLM commit from $UPSTREAM:$src_tag config (got '$commit')"; exit 1
+          fi
+          if ! [[ "$cuda" =~ ^[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Could not read CUDA_VERSION from $UPSTREAM:$src_tag config (got '$cuda')"; exit 1
+          fi
+          {
+            echo "src_tag=$src_tag"
+            echo "digest=$digest"
+            echo "commit=$commit"
+            echo "cuda=$cuda"
+            echo "created=$(jq -r '.created // empty' <<<"$cfg")"
+            echo "build_url=$(jq -r '.config.Labels["ai.vllm.build.url"] // empty' <<<"$cfg")"
+            echo "mirror_tag=nightly-$commit"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Mirror to GHCR
+        env:
+          DIGEST: ${{ steps.up.outputs.digest }}
+          MIRROR_TAG: ${{ steps.up.outputs.mirror_tag }}
+        run: |
+          crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin <<<"$GH_TOKEN"
+          if [ "$(crane digest "$MIRROR:$MIRROR_TAG" 2>/dev/null || true)" = "$DIGEST" ]; then
+            echo "✓ $MIRROR:$MIRROR_TAG already mirrored"
+            exit 0
+          fi
+          # crane copy copies the whole index byte-for-byte, so the digest is unchanged and
+          # the pin's @sha256 is the same upstream and in the mirror.
+          crane copy "$UPSTREAM@$DIGEST" "$MIRROR:$MIRROR_TAG"
+          got=$(crane digest "$MIRROR:$MIRROR_TAG")
+          if [ "$got" != "$DIGEST" ]; then
+            echo "::error::Mirror digest $got != upstream $DIGEST"; exit 1
+          fi
+          echo "✓ mirrored $UPSTREAM@$DIGEST -> $MIRROR:$MIRROR_TAG"
+
+      - name: Open or update candidate PR
+        env:
+          SRC_TAG: ${{ steps.up.outputs.src_tag }}
+          DIGEST: ${{ steps.up.outputs.digest }}
+          COMMIT: ${{ steps.up.outputs.commit }}
+          CUDA: ${{ steps.up.outputs.cuda }}
+          CREATED: ${{ steps.up.outputs.created }}
+          BUILD_URL: ${{ steps.up.outputs.build_url }}
+          MIRROR_TAG: ${{ steps.up.outputs.mirror_tag }}
+        run: |
+          read_pin() { bash -c 'source "$1" >/dev/null 2>&1; printf "%s\t%s\n" "${VLLM_NIGHTLY_IMAGE:-}" "${VLLM_NIGHTLY_CUDA:-}"' _ "$PIN_FILE"; }
+          IFS=$'\t' read -r cur_pin cur_cuda < <(read_pin)
+          if [ -z "$cur_pin" ]; then
+            echo "::notice::No VLLM_NIGHTLY_IMAGE on $BASE_BRANCH yet — mirrored only, no PR."
+            exit 0
+          fi
+          if [ "${cur_pin##*@}" = "$DIGEST" ]; then
+            echo "✓ $BASE_BRANCH already pins $DIGEST — nothing to propose."
+            exit 0
+          fi
+          new_pin="$MIRROR:$MIRROR_TAG@$DIGEST"
+          cur_tag="${cur_pin%@*}"; cur_commit="${cur_tag##*:nightly-}"
+
+          # Skip the force-push when the rolling branch already proposes this exact build.
+          if git fetch --depth=1 origin "$CANDIDATE_BRANCH" 2>/dev/null &&
+             git show FETCH_HEAD:"$PIN_FILE" | grep -qF "VLLM_NIGHTLY_IMAGE=\"$new_pin\""; then
+            echo "✓ $CANDIDATE_BRANCH already proposes $new_pin"
+            branch_current=1
+          fi
+
+          git checkout -B "$CANDIDATE_BRANCH"
+          sed -i -E \
+            -e "s|^VLLM_NIGHTLY_IMAGE=.*|VLLM_NIGHTLY_IMAGE=\"$new_pin\"|" \
+            -e "s|^VLLM_NIGHTLY_CUDA=.*|VLLM_NIGHTLY_CUDA=\"$CUDA\"|" "$PIN_FILE"
+          bash -n "$PIN_FILE"
+          bash scripts/update_checksum.sh >/dev/null
+          md5sum -c --quiet checksums.md5
+          floor=$(bash -c 'source "$1" >/dev/null 2>&1; min_driver_for_image "$VLLM_NIGHTLY_IMAGE"' _ "$PIN_FILE")
+
+          if [ -z "${branch_current:-}" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A "$PIN_FILE" checksums.md5 install.sh.md5
+            git commit -q -m "vllm: bump nightly pin to ${COMMIT:0:12} (candidate, needs GPU validation)" \
+                          -m "Upstream $UPSTREAM:$SRC_TAG -> $new_pin (CUDA $CUDA)."
+            git push --force origin "HEAD:refs/heads/$CANDIDATE_BRANCH"
+          fi
+
+          # CUDA major.minor drives the driver floor (gpu_detect.sh: min_driver_for_cuda).
+          mm() { echo "$1" | cut -d. -f1,2; }
+          if [ "$(mm "$CUDA")" != "$(mm "$cur_cuda")" ]; then
+            cuda_note="> [!WARNING]
+          > **CUDA changed: ${cur_cuda:-unknown} → $CUDA.** The driver floor for the pin moves with it."
+          else
+            cuda_note="CUDA unchanged ($CUDA)."
+          fi
+          if [ -n "$floor" ]; then
+            floor_note="Driver floor for the new pin: **≥ $floor** (\`min_driver_for_cuda\`)."
+          else
+            floor_note="> [!CAUTION]
+          > **No driver floor known for CUDA $CUDA.** Add a row to \`min_driver_for_cuda\` in \`$PIN_FILE\` (from NVIDIA's CUDA release notes) before merging — \`validate_models.sh\` fails until you do."
+          fi
+
+          cat > "$RUNNER_TEMP/body.md" <<EOF
+          Automated candidate: upstream \`vllm/vllm-openai:$SRC_TAG\` differs from the pin on \`$BASE_BRANCH\`.
+
+          **Do not merge until a GPU test pass on this build.** This workflow never merges; remove the \`$CANDIDATE_LABEL\` label and merge by hand once validated. The PR is force-updated in place as upstream moves.
+
+          | | Current pin | Candidate |
+          |---|---|---|
+          | vLLM commit | [\`${cur_commit:0:12}\`](https://github.com/vllm-project/vllm/commit/$cur_commit) | [\`${COMMIT:0:12}\`](https://github.com/vllm-project/vllm/commit/$COMMIT) |
+          | Image | \`$cur_pin\` | \`$new_pin\` |
+          | CUDA | \`${cur_cuda:-?}\` | \`$CUDA\` |
+
+          - Upstream: \`vllm/vllm-openai:$SRC_TAG\` = \`$DIGEST\` (mirrored as \`$MIRROR:$MIRROR_TAG\`, digest preserved)
+          - Built: ${CREATED:-unknown}${BUILD_URL:+ ([buildkite]($BUILD_URL))}
+          - Changes: https://github.com/vllm-project/vllm/compare/$cur_commit...$COMMIT
+
+          $cuda_note
+
+          $floor_note
+
+          ### GPU validation
+          - [ ] Every NVIDIA menu entry on \`\$VLLM_NIGHTLY_IMAGE\` serves on the candidate (\`scripts/lib/vllm_menu_nvidia.sh\`)
+          - [ ] Bench numbers not regressed vs the current pin
+
+          _Checks note:_ pushes made with \`GITHUB_TOKEN\` do not trigger other workflows, so \`validate-models\` / \`Checksum Check\` will not run on this PR by themselves. This job already verified \`checksums.md5\`; close and reopen the PR to run the full CI.
+          EOF
+
+          title="vLLM nightly candidate: ${COMMIT:0:12} (CUDA $CUDA)"
+          gh label create "$CANDIDATE_LABEL" --color D93F0B \
+            --description "Bumps a pinned image; merge only after a GPU test pass" 2>/dev/null || true
+          num=$(gh pr list --head "$CANDIDATE_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$num" ]; then
+            gh pr edit "$num" --title "$title" --body-file "$RUNNER_TEMP/body.md" --add-label "$CANDIDATE_LABEL"
+          else
+            gh pr create --base "$BASE_BRANCH" --head "$CANDIDATE_BRANCH" --title "$title" \
+              --body-file "$RUNNER_TEMP/body.md" --label "$CANDIDATE_LABEL"
+          fi

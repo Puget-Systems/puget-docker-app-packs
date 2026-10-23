@@ -9,13 +9,17 @@ on:
   push:
     paths:
       - 'scripts/lib/vllm_model_select.sh'
+      - 'scripts/lib/vllm_menu_*.sh'
       - 'scripts/lib/ollama_model_select.sh'
+      - 'scripts/lib/gpu_detect.sh'
       - 'scripts/validate_models.sh'
       - '.github/workflows/validate-models.yml'
   pull_request:
     paths:
       - 'scripts/lib/vllm_model_select.sh'
+      - 'scripts/lib/vllm_menu_*.sh'
       - 'scripts/lib/ollama_model_select.sh'
+      - 'scripts/lib/gpu_detect.sh'
       - 'scripts/validate_models.sh'
   schedule:
     - cron: '17 9 * * *'    # ~09:17 UTC nightly. NOTE: GitHub only runs schedules from

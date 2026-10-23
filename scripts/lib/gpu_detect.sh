@@ -3,6 +3,25 @@
 # Source this file; do not execute directly.
 # After sourcing, call detect_gpus to populate environment variables.
 
+# --- Pinned vLLM nightly (NVIDIA) ---------------------------------------------
+# Every NVIDIA menu entry that needs a nightly vLLM uses VLLM_NIGHTLY_IMAGE, and
+# validate_models.sh reads it too, so this is the one place the pin lives.
+#
+# Why pinned and mirrored: upstream `vllm/vllm-openai:nightly` moves every day, so
+# installs were not reproducible and a known-good build could regress overnight.
+# vLLM also prunes old `nightly-<sha>` tags from Docker Hub, and a bare Docker Hub
+# digest stops being pullable once no tag references it. So tested builds are copied
+# (multi-arch index, digest preserved) to our own GHCR package, which we never prune.
+# The ref carries the tag (readable: it is the vLLM commit) and the digest (immutable).
+#
+# .github/workflows/vllm-nightly.yml checks daily that this ref still resolves, and
+# keeps one rolling `needs-gpu-validation` PR that bumps these two lines when upstream
+# moves. Merge it only after a GPU test pass on the candidate build.
+# VLLM_NIGHTLY_CUDA is the image's CUDA_VERSION (from its config env); it sets the
+# driver floor for the pin in min_driver_for_image below.
+VLLM_NIGHTLY_IMAGE="ghcr.io/puget-systems/vllm-openai:nightly-e68efc685ab1e6f1eda004ced7157e3ca411da2f@sha256:1ff6716fe240a922d0d518b8884261e25b0c02eda8e2ce90888e364978249cad"
+VLLM_NIGHTLY_CUDA="13.0.2"
+
 detect_gpus() {
     # Initialize defaults
     GPU_VENDOR="unknown"
@@ -14,7 +33,6 @@ detect_gpus() {
     COMPUTE_CAP="0.0"
     COMPUTE_MAJOR=0
     IS_BLACKWELL=false
-    NIGHTLY_PREFIX="nightly"
     DRIVER_VERSION=""
 
     # --- AMD DETECTION ---
@@ -106,9 +124,10 @@ detect_gpus() {
         # check silently misclassified every datacenter Blackwell box as pre-Blackwell,
         # which failed the NVFP4 menu gates. Found on a GB300 (compute 10.3), Sept 2026.
         #
-        # Every family uses the plain `nightly` tag. vLLM stopped publishing
-        # `cu130-nightly` on 2026-04-23 (frozen at 0.19.2, no sm_103), and `nightly`
-        # itself is now the CUDA 13.0 build, so it is the same line, kept current.
+        # Every family uses the same nightly build (VLLM_NIGHTLY_IMAGE, pinned at the
+        # top of this file). vLLM stopped publishing `cu130-nightly` on 2026-04-23
+        # (frozen at 0.19.2, no sm_103), and `nightly` itself is now the CUDA 13.0
+        # build, so it is the same line, kept current.
         COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
         COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
         if [ "${COMPUTE_MAJOR:-0}" -ge 10 ] 2>/dev/null; then
@@ -116,11 +135,23 @@ detect_gpus() {
         else
             IS_BLACKWELL=false
         fi
-        NIGHTLY_PREFIX="nightly"
         return 0
     fi
 
     return 1
+}
+
+# min_driver_for_cuda VERSION — echo the minimum NVIDIA driver major version for a
+# CUDA runtime version (e.g. 13.0.2), or nothing when the release is not in the
+# table yet. Add a row only once the floor is confirmed in NVIDIA's CUDA release
+# notes. validate_models.sh fails when a menu's NVIDIA image maps to nothing, so a
+# candidate pin on a new CUDA line cannot pass CI until its row exists here.
+min_driver_for_cuda() {
+    case "$1" in
+        13.0|13.0.*)               echo 580 ;;
+        12.8|12.8.*|12.9|12.9.*)   echo 570 ;;
+        *) ;;
+    esac
 }
 
 # min_driver_for_image IMAGE — echo the minimum NVIDIA driver major version the
@@ -128,15 +159,21 @@ detect_gpus() {
 # their own userspace; only the NVIDIA driver↔CUDA coupling bites here).
 # The mapping is the CUDA release each image line is built against:
 #   CUDA 13.0 → driver ≥ 580,  CUDA 12.8/12.9 → driver ≥ 570.
-# As of 2026-10 every vllm/vllm-openai tag the menus use (nightly, latest, v0.20.2,
+# The pinned nightly follows VLLM_NIGHTLY_CUDA, so a pin bump that moves to a new
+# CUDA line (e.g. the cu134 nightlies) moves the floor with it.
+# As of 2026-10 every other vllm/vllm-openai tag the menus use (latest, v0.20.2,
 # v0.25.0) is a CUDA 13.0.2 build, so all of them need 580.
 # This is the single source of truth — the bench sources this file and gates
 # model selection with it, so keep it updated when image lines move to a new CUDA.
 min_driver_for_image() {
     case "$1" in
+        "$VLLM_NIGHTLY_IMAGE")     min_driver_for_cuda "$VLLM_NIGHTLY_CUDA" ;;
         *cu130*)                   echo 580 ;;   # CUDA 13.0
         *cu128*|*cu129*)           echo 570 ;;
-        vllm/vllm-openai:*)        echo 580 ;;   # nightly/latest/vX.Y.Z are CUDA 13.0 builds
+        *cu13[1-9]*)               ;;            # newer CUDA line: floor unknown, see above
+        # An older mirrored nightly (e.g. an operator override) is the same upstream line.
+        vllm/vllm-openai:*|ghcr.io/puget-systems/vllm-openai:*)
+                                   echo 580 ;;   # latest/vX.Y.Z are CUDA 13.0 builds
         rocm/*|*rocm*|intel/*|puget-vllm-xpu*) ;;  # non-NVIDIA: no NVIDIA driver gate
         *) ;;
     esac

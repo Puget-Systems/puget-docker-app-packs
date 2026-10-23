@@ -40,14 +40,18 @@ Models must be added to **both** the shared library and all callers.
   - [ ] `VLLM_REASONING_ARGS` — If model supports thinking mode (`--reasoning-parser qwen3`, `--reasoning-parser gemma4`)
   - [ ] `VLLM_EXTRA_ARGS` — Special flags (`--language-model-only`, `--enforce-eager`, etc.)
   - [ ] `VLLM_DTYPE` — Data type (`auto` default, `float16` for AWQ models)
-  - [ ] `VLLM_IMAGE` — Set to `"vllm/vllm-openai:${NIGHTLY_PREFIX}"` if model needs nightly vLLM
+  - [ ] `VLLM_IMAGE` — Set to `"$VLLM_NIGHTLY_IMAGE"` if model needs nightly vLLM. That is
+        the pinned, GHCR-mirrored nightly defined at the top of `scripts/lib/gpu_detect.sh`;
+        never use the floating `vllm/vllm-openai:nightly` tag. If the model needs a newer
+        nightly than the pin, bump the pin (the `vllm-nightly` workflow's candidate PR)
+        and GPU-test every nightly entry, since they all share it.
 - [ ] Add VRAM gate: `if [ "$TOTAL_VRAM" -lt <min_gb> ]; then ... return 1; fi`
 - [ ] **Driver requirement:** `VLLM_MIN_DRIVER` is derived automatically from
       `VLLM_IMAGE` by `min_driver_for_image()` in `scripts/lib/gpu_detect.sh`
       (CUDA 13.0 images, which today is every `vllm/vllm-openai` tag → driver ≥580;
-      cu128/cu129 → ≥570). If the image line
-      moves to a new CUDA release, update that one mapping — every menu and the
-      bench inherit it.
+      cu128/cu129 → ≥570; the nightly pin follows `VLLM_NIGHTLY_CUDA`). If an image
+      line moves to a new CUDA release, update that one mapping (`min_driver_for_cuda`)
+      — every menu and the bench inherit it.
 
 ### 3. Container Runtime Check
 **File:** `packs/team_llm/docker-compose.yml`
@@ -124,7 +128,7 @@ These files read `MENU_MAX` dynamically, so **no range update needed** — but v
 
 | Issue | Symptom | Prevention |
 |-------|---------|------------|
-| Forgot `VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"` | `model type not recognized` at container startup | Check if model arch is in vLLM stable |
+| Forgot `VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"` | `model type not recognized` at container startup | Check if model arch is in vLLM stable |
 | Host driver older than the image's CUDA | `no kernel image is available` / `driver/library version mismatch` in container logs | `min_driver_for_image()` mapping current? The bench gates on it pre-launch |
 | Forgot to update `MENU_MAX` | Prompt says `[1-N]` but there are N+1 options | `MENU_MAX` is set inside the menu function |
 | Edited the dispatcher instead of the vendor menu | Model never appears on the target vendor | `vllm_model_select.sh` is dispatch-only; menus live in `vllm_menu_<vendor>.sh` |
