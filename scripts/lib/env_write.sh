@@ -159,11 +159,12 @@ validate_env() {
     # Validate VLLM_IMAGE is a known tag (warning, not error)
     local image
     image=$(grep '^VLLM_IMAGE=' "$env_file" 2>/dev/null | tail -1 | cut -d= -f2-)
-    # Accept the known per-vendor inference images: NVIDIA (vllm/vllm-openai), AMD ROCm
+    # Accept the known per-vendor inference images: NVIDIA (vllm/vllm-openai, plus our GHCR
+    # mirror of pinned nightlies, tag[@digest]), AMD ROCm
     # (rocm/vllm — AMD's official arch-pinned builds; ggml-org/llama.cpp — AMD team_llm runs
     # llama.cpp, not vLLM), Intel (intel/llm-scaler-vllm), and locally-built puget-vllm-*
     # images. Anything else gets a (non-fatal) heads-up.
-    if [ -n "$image" ] && ! echo "$image" | grep -qE '^(vllm/vllm-openai:(latest|nightly|cu130-nightly|v[0-9]+\.[0-9]+\.[0-9]+)|rocm/vllm:.+|ghcr\.io/ggml-org/llama\.cpp:.+|intel/llm-scaler-vllm:.+|puget-vllm-.+)$'; then
+    if [ -n "$image" ] && ! echo "$image" | grep -qE '^(vllm/vllm-openai:(latest|nightly|cu130-nightly|v[0-9]+\.[0-9]+\.[0-9]+)|ghcr\.io/puget-systems/vllm-openai:nightly-[0-9a-f]+(@sha256:[0-9a-f]{64})?|rocm/vllm:.+|ghcr\.io/ggml-org/llama\.cpp:.+|intel/llm-scaler-vllm:.+|puget-vllm-.+)$'; then
         echo -e "${YELLOW}⚠ Non-standard inference image: '${image}'${NC}"
     fi
 

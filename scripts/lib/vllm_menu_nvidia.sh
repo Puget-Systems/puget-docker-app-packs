@@ -3,7 +3,7 @@
 # Source this file; do not execute directly.
 #
 # Prerequisites: source gpu_detect.sh and call detect_gpus first.
-#   Required globals: GPU_COUNT, TOTAL_VRAM, VRAM_GB, NIGHTLY_PREFIX
+#   Required globals: GPU_COUNT, TOTAL_VRAM, VRAM_GB, VLLM_NIGHTLY_IMAGE (gpu_detect.sh)
 #   Required colors:  GREEN, BLUE, YELLOW, RED, NC
 #
 # Usage:
@@ -184,7 +184,7 @@ select_vllm_model() {
             VLLM_THINKING_ARGS="--default-chat-template-kwargs '{\"preserve_thinking\": true}'"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             local total_avail=$((TOTAL_VRAM))
             if [ "$total_avail" -ge 48 ]; then
                 VLLM_MAX_CTX="262144"   # Full native 262K — comfortable on 48GB+
@@ -204,7 +204,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             ;;
         3)
             VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
@@ -212,7 +212,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             ;;
         4)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -224,7 +224,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             VLLM_MAX_CTX="131072"
             ;;
         5)
@@ -240,7 +240,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             ;;
         7)
             if [ "$TOTAL_VRAM" -lt 80 ]; then
@@ -251,7 +251,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             ;;
         8)
             if [ "$TOTAL_VRAM" -lt 20 ]; then
@@ -263,7 +263,7 @@ select_vllm_model() {
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
             VLLM_EXTRA_ARGS="$EAGER_ARGS"
             VLLM_DTYPE="float16"
-            VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
+            VLLM_IMAGE="$VLLM_NIGHTLY_IMAGE"
             ;;
         9)
             VLLM_MODEL_ID="openai/gpt-oss-20b"; VLLM_GPU_COUNT=1; VLLM_MODEL_SIZE_GB=16
@@ -283,7 +283,7 @@ select_vllm_model() {
             # 22.4 / 78.1 / 133.6 tok/s at conc 1/4/8 = ~4-5x the FP16 27B baseline
             # (4.5 / 17.3 / 32.4), in ~14 GB vs ~54 GB. NVFP4 (compressed-tensors) needs
             # vLLM >=0.25.0 for the FlashInfer-Cutlass FP4 kernel on sm_120/sm_121, so this
-            # entry PINS v0.25.0 rather than riding ${NIGHTLY_PREFIX} (which is older and
+            # entry PINS v0.25.0 rather than riding the nightly (which is older and
             # lacks the kernel). VLLM_ENABLE_MTP switches on the MTP draft (the compose
             # injects --speculative-config); speculative decoding is lossless. No eager
             # mode — CUDA graphs are part of the speedup.
@@ -304,7 +304,7 @@ select_vllm_model() {
             # 1. ARCH: hybrid attention (linear attention on 48 of 64 layers, full on 16)
             #    plus a vision tower. That arch landed in vLLM main AFTER the v0.27.1
             #    stable cut (2026-08-11) — the model published 2026-08-14 — so this entry
-            #    rides ${NIGHTLY_PREFIX} instead of pinning a release tag. Do NOT "fix"
+            #    rides the nightly instead of pinning a release tag. Do NOT "fix"
             #    this to a stable pin until a release ships the arch; a stable image
             #    fails at load with an unrecognized model type.
             # 2. TRANSFORMERS: needs >=5.8.0. VLLM_EXTRA_PIP makes the compose upgrade it
@@ -333,7 +333,7 @@ select_vllm_model() {
                 echo -e "${RED}✗ Qwen 3.8 27B NVFP4 requires ~20 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"
                 return 1
             fi
-            # Image moved from ${NIGHTLY_PREFIX} to :latest on 2026-09-18. The arch
+            # Image moved from nightly to :latest on 2026-09-18. The arch
             # has since landed in stable, verified against the running registry:
             #   Qwen3_5ForConditionalGeneration  SUPPORTED
             #   Qwen3_5MTP                       SUPPORTED   (MTP draft head)
@@ -481,7 +481,7 @@ select_vllm_model() {
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser hermes"
             # :latest since 2026-09-23. vLLM 0.30.0 registers Qwen4ExpForConditionalGeneration,
             # so the nightly workaround above is obsolete AND harmful: on a GB300
-            # ${NIGHTLY_PREFIX} resolves to cu130-nightly, which is vLLM 0.19.2 and fails at
+            # the old NIGHTLY_PREFIX resolved to cu130-nightly, which is vLLM 0.19.2 and fails at
             # load with "model type `qwen4_exp` but Transformers does not recognize this
             # architecture". Verified serving on 0.30.0 at util 0.82.
             #
