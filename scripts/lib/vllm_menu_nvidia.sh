@@ -222,7 +222,16 @@ select_vllm_model() {
             VLLM_MODEL_ID="cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=60
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            # No eager flags on 2+ GPUs: CUDA graphs and prefix caching serve correctly at TP2 and TP4 (Workstation
+            # and Max-Q), and eager mode cost 2.75x or more single-user tok/s on the hosts tested (#9).
+            # On 1 GPU, keep eager. With graphs on, vLLM needs one Mamba cache block per --max-num-seqs slot before it
+            # will capture, and the 72 GiB of weights leave a 96 GB card only 206 blocks against the pack's 256, so
+            # the engine refuses to start (#9). Eager mode skips that check. Lifting this needs a per-entry
+            # MAX_NUM_SEQS cap and a test run.
+            VLLM_EXTRA_ARGS="--language-model-only"
+            if [ "$VLLM_GPU_COUNT" -lt 2 ]; then
+                VLLM_EXTRA_ARGS="$VLLM_EXTRA_ARGS $EAGER_ARGS"
+            fi
             VLLM_DTYPE="float16"
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             VLLM_MAX_CTX="131072"
@@ -250,7 +259,14 @@ select_vllm_model() {
             VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"; VLLM_MODEL_SIZE_GB=60
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            # No eager flags on 2+ GPUs: CUDA graphs and prefix caching serve correctly at TP2 and TP4 (Workstation
+            # and Max-Q), and eager mode cost 7.2x single-user tok/s (#9).
+            # On 1 GPU, keep eager. This is the same Mamba-hybrid squeeze as entry 4: about 73 GB of weights on a
+            # 96 GB card. Not run on 1 GPU (the test host's disk was too slow), so this is the safe default until
+            # it is.
+            if [ "$VLLM_GPU_COUNT" -lt 2 ]; then
+                VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            fi
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         8)

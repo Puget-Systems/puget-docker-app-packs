@@ -98,6 +98,28 @@ Benefits:
 
 The wizard automatically detects your GPU architecture and selects the correct Docker image.
 
+### Known issue: Qwen 3.5 122B and Nemotron 3 Super run in eager mode on one GPU
+
+On NVIDIA, both 120B-class entries run with CUDA graphs and prefix caching on 2 or more GPUs. That's
+about 3–7× the single-user speed of eager mode, and it held through a 25-minute saturated soak
+on 2× RTX PRO 6000 (#9). On a single GPU the menu still adds `--enforce-eager --no-enable-prefix-caching`.
+
+Both models are Mamba/linear-attention hybrids. With CUDA graphs on, vLLM reserves one Mamba
+cache block for each of the `--max-num-seqs` slots (256 in this pack) and refuses to start if it can't.
+On one 96 GB RTX PRO 6000, Qwen 3.5 122B's 72 GiB of weights leave room for only 206 blocks:
+
+```
+ValueError: max_num_seqs (256) exceeds available Mamba cache blocks (206). Each decode sequence
+requires one Mamba cache block, so CUDA graph capture cannot proceed.
+```
+
+Eager mode skips that check, so single-GPU installs keep the configuration they had before.
+Nemotron 3 Super hasn't been run on one GPU but has the same memory squeeze, so it gets the same default.
+
+To try graphs on one GPU anyway, remove the two eager flags from `EXTRA_VLLM_ARGS` in `.env`, and add
+`MAX_NUM_SEQS=192` (the compose file reads it), then restart. That's untested, and it caps how many
+requests run at once.
+
 ### Known issue: Intel Arc Pro needs host RAM to cover vLLM's VRAM
 
 On Intel (B-series, `xe` kernel driver), every buffer vLLM allocates on the GPU is also
