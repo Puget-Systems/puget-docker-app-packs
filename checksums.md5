@@ -10,7 +10,7 @@ c26d312a2cbf3b823afe1fb9d157fefb  ./packs/comfy_ui/init.sh
 bde23ae08bae534d9ef610ef454ba458  ./scripts/lib/smart_build.sh
 cba2709942afe5a915184151a5a08969  ./scripts/lib/vllm_menu_amd.sh
 b2891ecb242f1c9f41519112016fce74  ./scripts/lib/vllm_menu_intel.sh
-57488983b6b55e8f92918379dc0171ed  ./scripts/lib/vllm_menu_nvidia.sh
+93081d20e33966bbf5bfa1183f9b554d  ./scripts/lib/vllm_menu_nvidia.sh
 a2b7007acae3b3a4341e1e7a9c677db5  ./scripts/lib/vllm_model_select.sh
 bd4d69332993a2eb292c99418757057b  ./scripts/lib/vllm_monitor.sh
 98b9f375a9c8a45a7facc029dc4ee177  ./scripts/list_models.sh

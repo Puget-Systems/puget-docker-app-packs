@@ -39,6 +39,10 @@ Models must be added to **both** the shared library and all callers.
   - [ ] `VLLM_TOOL_CALL_ARGS` — Tool call parser (`hermes`, `gemma4`, `qwen3_coder`)
   - [ ] `VLLM_REASONING_ARGS` — If model supports thinking mode (`--reasoning-parser qwen3`, `--reasoning-parser gemma4`)
   - [ ] `VLLM_EXTRA_ARGS` — Special flags (`--language-model-only`, `--enforce-eager`, etc.)
+    - [ ] If you drop `--enforce-eager` for a Mamba or linear-attention hybrid (Qwen 3.5/3.6 GDN,
+          Nemotron-H), start it on the **smallest GPU count and VRAM the entry's gate allows**. With CUDA
+          graphs on, vLLM needs one Mamba cache block per `--max-num-seqs` slot (256 here) and won't start
+          otherwise. Passing on 2 GPUs doesn't prove 1 GPU works (see entries 4 and 7, #9).
   - [ ] `VLLM_DTYPE` — Data type (`auto` default, `float16` for AWQ models)
   - [ ] `VLLM_IMAGE` — Set to `"$VLLM_NIGHTLY_IMAGE"` if model needs nightly vLLM. That is
         the pinned, GHCR-mirrored nightly defined at the top of `scripts/lib/gpu_detect.sh`;
