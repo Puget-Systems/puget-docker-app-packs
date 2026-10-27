@@ -9,6 +9,7 @@ cd "$REPO_ROOT"
 SCRIPT_FILES=$(find . -name '*.sh' \
     -not -path './.git/*' \
     -not -path './context_portal/*' \
+    -not -path './.claude/*' \
     -not -path './scripts/update_checksum.sh' \
     | sort)
 
