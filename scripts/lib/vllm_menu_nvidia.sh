@@ -175,14 +175,22 @@ select_vllm_model() {
 
     case $choice in
         1)
-            # Qwen 3.6: standard attention (no GDN), so no --language-model-only needed.
+            # Qwen 3.6 35B-A3B is a Gated DeltaNet hybrid like entries 2 and 3 (30 of its 40 layers are linear
+            # attention). It runs without --language-model-only, so the vision tower loads; the #9 numbers were
+            # measured that way.
             # Context window scales with available VRAM — vLLM distributes KV cache across
             # all GPUs via tensor parallelism, so multi-GPU setups unlock proportionally more context.
             VLLM_MODEL_ID="cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
             VLLM_THINKING_ARGS="--default-chat-template-kwargs '{\"preserve_thinking\": true}'"
-            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            # No eager flags from 48 GB up: CUDA graphs and prefix caching serve correctly on 2x and 1x RTX PRO 6000,
+            # and eager mode cost 6.3-7.1x single-user tok/s on two GPUs (two hosts) and 5.4x on one (#9).
+            # Below 48 GB, keep eager. On a 32 GB card, graphs leave too little KV cache for a full-length request
+            # (#15). 48 GB cards report 47 here (MiB / 1024, rounded down), so they stay eager until measured.
+            if [ "$TOTAL_VRAM" -lt 48 ]; then
+                VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            fi
             VLLM_DTYPE="float16"
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             local total_avail=$((TOTAL_VRAM))
@@ -202,7 +210,14 @@ select_vllm_model() {
             VLLM_MODEL_ID="cyankiwi/Qwen3.6-27B-AWQ-INT4"; VLLM_MODEL_SIZE_GB=18
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            # No eager flags from 48 GB up: CUDA graphs and prefix caching serve correctly on 2x and 1x RTX PRO 6000,
+            # and eager mode cost 3.5x single-user tok/s on two GPUs and 2.2x on one (#9).
+            # Below 48 GB, keep eager like entries 1 and 3. Graphs are unmeasured there: this entry doesn't start on
+            # 24 or 32 GB cards with either setting yet (#15).
+            VLLM_EXTRA_ARGS="--language-model-only"
+            if [ "$TOTAL_VRAM" -lt 48 ]; then
+                VLLM_EXTRA_ARGS="$VLLM_EXTRA_ARGS $EAGER_ARGS"
+            fi
             VLLM_DTYPE="float16"
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
@@ -210,7 +225,14 @@ select_vllm_model() {
             VLLM_MODEL_ID="cyankiwi/Qwen3.5-35B-A3B-AWQ-4bit"; VLLM_MODEL_SIZE_GB=22
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="--language-model-only $EAGER_ARGS"
+            # No eager flags from 48 GB up: CUDA graphs and prefix caching serve correctly on 2x RTX PRO 6000, and
+            # eager mode cost 6.4x single-user tok/s (#9).
+            # Below 48 GB, keep eager. On a 32 GB card, graphs leave too little KV cache for a full-length request
+            # (#15).
+            VLLM_EXTRA_ARGS="--language-model-only"
+            if [ "$TOTAL_VRAM" -lt 48 ]; then
+                VLLM_EXTRA_ARGS="$VLLM_EXTRA_ARGS $EAGER_ARGS"
+            fi
             VLLM_DTYPE="float16"
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
@@ -248,7 +270,13 @@ select_vllm_model() {
             VLLM_MODEL_ID="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"; VLLM_MODEL_SIZE_GB=25
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser qwen3_coder"
             VLLM_REASONING_ARGS="--reasoning-parser qwen3"
-            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            # No eager flags on 32 GB and up: CUDA graphs and prefix caching serve correctly on 2x and 1x RTX PRO 6000,
+            # where eager mode cost 9.1x single-user tok/s on two GPUs and 8.0x on one (#9), and they start on a
+            # 32 GB card. On a 24 GB card they run out of memory during startup, so keep eager there (#15).
+            # The cut is 28, not 32, because a 32 GB card reports 31 here (MiB / 1024, rounded down).
+            if [ "$TOTAL_VRAM" -lt 28 ]; then
+                VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            fi
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
         7)
@@ -277,7 +305,8 @@ select_vllm_model() {
             VLLM_MODEL_ID="cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"; VLLM_MODEL_SIZE_GB=18
             VLLM_TOOL_CALL_ARGS="--enable-auto-tool-choice --tool-call-parser gemma4"
             VLLM_REASONING_ARGS="--reasoning-parser gemma4"
-            VLLM_EXTRA_ARGS="$EAGER_ARGS"
+            # No eager flags: CUDA graphs and prefix caching serve correctly here on 2x RTX PRO 6000, and eager mode
+            # cost 4.8x single-user tok/s (#9).
             VLLM_DTYPE="float16"
             VLLM_IMAGE="vllm/vllm-openai:${NIGHTLY_PREFIX}"
             ;;
