@@ -59,8 +59,14 @@ show_ollama_model_menu() {
         echo -e "  8) Qwen 3.8 (27B Dense)  - ${RED}Requires ~18 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
 
-    echo "  9) Skip                  - I'll download models later"
-    MENU_MAX=9
+    if [ "$TOTAL_VRAM" -ge 124 ]; then
+        echo "  9) Qwen 3.8 Flash-Next   - 125B MoE, 6B active, vision, 262K ctx (~120 GB) [New]"
+    else
+        echo -e "  9) Qwen 3.8 Flash-Next   - ${RED}Requires ~124 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+
+    echo "  10) Skip                 - I'll download models later"
+    MENU_MAX=10
 }
 
 # select_ollama_model <choice>
@@ -82,6 +88,10 @@ select_ollama_model() {
         7) OLLAMA_MODEL_TAG="gemma4:31b";          OLLAMA_MODEL_VRAM_GB=20 ;;
         # Needs Ollama >= 0.34 (older servers answer the pull with 412); compose pins it.
         8) OLLAMA_MODEL_TAG="qwen3.8:27b";         OLLAMA_MODEL_VRAM_GB=18 ;;
+        # 120 GB (~112 GiB) Q4_K_M. TOTAL_VRAM is GiB; 124 turns away a 128 GB DGX Spark
+        # (reports ~119 GiB, shared with the OS) instead of letting the runner OOM. Fits
+        # GB300 and 2x RTX Pro 6000. Ollama added the arch in 0.33.1; compose pins 0.34.4.
+        9) OLLAMA_MODEL_TAG="qwen3.8-flash-next:125b-a6b-q4_K_M"; OLLAMA_MODEL_VRAM_GB=124 ;;
         *) return 2 ;;
     esac
 

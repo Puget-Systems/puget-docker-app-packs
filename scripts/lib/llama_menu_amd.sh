@@ -82,9 +82,19 @@ show_llama_model_menu() {
     else
         echo -e "  11) Qwen 3.8 27B (Q8_0)       - ${RED}Requires ~32 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
-    echo "  12) Custom GGUF (advanced)    - Enter any HuggingFace GGUF repo:quant"
-    echo "  13) Skip / configure later"
-    MENU_MAX=13
+    if [ "$TOTAL_VRAM" -ge 104 ]; then
+        echo "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - 125B MoE, 6B active, vision (~94 GB) [New]"
+    else
+        echo -e "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - ${RED}Requires ~104 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+    if [ "$TOTAL_VRAM" -ge 88 ]; then
+        echo "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - Same model, 2-bit dynamic (~79 GB) [New]"
+    else
+        echo -e "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - ${RED}Requires ~88 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+    fi
+    echo "  14) Custom GGUF (advanced)    - Enter any HuggingFace GGUF repo:quant"
+    echo "  15) Skip / configure later"
+    MENU_MAX=15
 }
 
 # recommend_llama_context <weights_gb> [avail_vram_gb] [n_slots] [min_ctx_per_slot]
@@ -166,7 +176,24 @@ select_llama_model() {
         11)
             [ "$TOTAL_VRAM" -lt 32 ] && { echo -e "${RED}✗ Qwen 3.8 27B Q8 needs ~32 GB.${NC}"; return 1; }
             LLAMA_MODEL_ID="unsloth/Qwen3.8-27B-GGUF:Q8_0"; LLAMA_MODEL_SIZE_GB=30 ;;
-        12)
+        12|13)
+            # Qwen 3.8 Flash-Next (arch qwen4exp): 125B MoE, 6B active, plus 51B of n-gram
+            # embeddings. llama.cpp added the arch on 2026-08-27 (#27742), so the rolling
+            # server-rocm tag and the pinned Intel b11459 build (2026-10-07) both load it.
+            # Gated on the whole file fitting in VRAM (size x 1.1), so in practice this means
+            # 128 GB boxes (4x R9700 / 4x B70) for IQ4_XS and 96 GB boxes for Q2_K_XL. Unsloth
+            # also documents a mixed RAM+VRAM mode; that path is not wired up here yet.
+            # Unsloth publishes 1-bit through Q8_0. Q3_K_XL (90 GB) and Q4_K_XL (111 GB) don't
+            # fit any VRAM tier the 2-bit and IQ4 entries miss. Not yet benchmarked on AMD or
+            # Intel; Intel keeps the UD build because ggml-org's plain IQ4_NL is 102 GB.
+            if [ "$choice" = 12 ]; then
+                [ "$TOTAL_VRAM" -lt 104 ] && { echo -e "${RED}✗ Qwen 3.8 Flash-Next IQ4_XS needs ~104 GB (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
+                LLAMA_MODEL_ID="unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS"; LLAMA_MODEL_SIZE_GB=94
+            else
+                [ "$TOTAL_VRAM" -lt 88 ] && { echo -e "${RED}✗ Qwen 3.8 Flash-Next Q2_K_XL needs ~88 GB (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
+                LLAMA_MODEL_ID="unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL"; LLAMA_MODEL_SIZE_GB=79
+            fi ;;
+        14)
             echo -e "${YELLOW}Custom GGUF — format owner/repo-GGUF:QUANT${NC}"
             echo "  e.g. unsloth/Qwen3.6-27B-GGUF:Q4_K_M"
             read -p "  Enter GGUF repo:quant (or Enter to skip): " CUSTOM_GGUF
