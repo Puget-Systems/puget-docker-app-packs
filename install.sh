@@ -127,15 +127,18 @@ else
     echo -e "${GREEN}✓ Docker Compose found: ${COMPOSE_VERSION}${NC}"
 fi
 
-# Docker Group Warning (critical for Ubuntu)
-echo ""
-echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
-echo -e "${YELLOW}⚠ IMPORTANT (Ubuntu/Debian users):${NC}"
-echo -e "  Docker commands require ${RED}sudo${NC} unless your user is in the 'docker' group."
-echo -e "  If you haven't already, run: ${GREEN}sudo usermod -aG docker \$USER${NC}"
-echo -e "  Then ${RED}LOG OUT${NC} and back in for changes to take effect."
-echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
-echo ""
+# Docker Group Warning (critical for Ubuntu). Not shown to root or to users already in the
+# 'docker' group: neither needs sudo for docker.
+if [ "$(id -u)" -ne 0 ] && ! id -nG "${USER:-$(id -un)}" 2>/dev/null | grep -qw docker; then
+    echo ""
+    echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}⚠ IMPORTANT (Ubuntu/Debian users):${NC}"
+    echo -e "  Docker commands require ${RED}sudo${NC} unless your user is in the 'docker' group."
+    echo -e "  If you haven't already, run: ${GREEN}sudo usermod -aG docker \$USER${NC}"
+    echo -e "  Then ${RED}LOG OUT${NC} and back in for changes to take effect."
+    echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+fi
 
 # Check for GPU Drivers and Runtimes
 detect_gpus || true
@@ -365,6 +368,8 @@ elif [ "$GPU_VENDOR" == "nvidia" ] || command -v nvidia-smi &> /dev/null; then
         echo "Verifying GPU access in Docker (this may pull an image on first run)..."
         if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi &> /dev/null; then
             echo -e "${GREEN}✓ GPU accessible from Docker.${NC}"
+            # Persistence mode keeps GPU start-up fast enough for Ollama's GPU discovery.
+            enable_nvidia_persistence || true
         else
             echo ""
             echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
@@ -1052,6 +1057,7 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                     fi
 
                     if [[ -n "$MODEL_TAG" ]]; then
+                         ensure_ollama_gpu || true
                          echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
                          docker compose exec -T inference ollama pull "$MODEL_TAG"
                          echo -e "${GREEN}✓ Model ready.${NC}"

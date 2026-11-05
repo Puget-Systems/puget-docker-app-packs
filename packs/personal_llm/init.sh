@@ -126,6 +126,8 @@ if ! wait_for_ollama; then
     exit 1
 fi
 
+ensure_ollama_gpu || true
+
 echo -e "${BLUE}Pulling ${OLLAMA_MODEL_TAG}... (This may take a while for larger models)${NC}"
 docker compose exec -T inference ollama pull "$OLLAMA_MODEL_TAG"
 

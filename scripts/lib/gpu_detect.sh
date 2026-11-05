@@ -151,3 +151,63 @@ driver_meets_min() {
     [[ "$installed_major" =~ ^[0-9]+$ ]] || return 0
     [ "$installed_major" -ge "$min" ]
 }
+
+# host_ram_gb — total system RAM in GiB (rounded down). Models like Qwen 3.8 Flash-Next keep a
+# large n-gram embedding table in host RAM (mmapped, ~27-34 GB) rather than VRAM, so their menu
+# gates check RAM as well. HOST_RAM_GB overrides detection (validate_models.sh fakes a big box);
+# where /proc/meminfo is missing (macOS dev machines) it reports a large value so nothing is gated.
+host_ram_gb() {
+    if [ -n "${HOST_RAM_GB:-}" ]; then echo "$HOST_RAM_GB"; return; fi
+    if [ -r /proc/meminfo ]; then
+        awk '/MemTotal/ {printf "%d", $2/1024/1024}' /proc/meminfo
+    else
+        echo 1000000
+    fi
+}
+
+# enable_nvidia_persistence — turn on NVIDIA persistence mode and keep it on across reboots.
+#   Without it each CUDA start-up re-initialises every GPU. On an 8x RTX 5090 box that took
+#   13 s per probe, so Ollama 0.34's 30 s GPU-discovery watchdog expired and it silently ran
+#   a 120 GB model on the CPU at 0.2 tok/s (Vast VM, 2026-11-04). Fixed by `nvidia-smi -pm 1`.
+#   -pm 1 does not survive a reboot, and Ubuntu's nvidia-persistenced unit starts the daemon
+#   with --no-persistence-mode, so a small oneshot unit re-applies it before Docker starts
+#   (the packs auto-start with Docker on boot).
+#   Returns 0 when persistence is on (or not applicable), 1 when it could not be enabled.
+enable_nvidia_persistence() {
+    command -v nvidia-smi &>/dev/null || return 0
+    local modes
+    modes=$(nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null)
+    # Unified-memory parts (GB10) report [N/A]; only act when some GPU reports Disabled.
+    echo "$modes" | grep -q "Disabled" || return 0
+
+    local SUDO=""
+    [ "$(id -u)" -ne 0 ] && SUDO="sudo"
+    echo -e "${BLUE}Enabling NVIDIA persistence mode (keeps GPUs initialised so containers find them quickly)...${NC}"
+    $SUDO nvidia-smi -pm 1 >/dev/null 2>&1
+
+    if command -v systemctl &>/dev/null && [ -d /etc/systemd/system ]; then
+        local smi; smi=$(command -v nvidia-smi)
+        $SUDO tee /etc/systemd/system/puget-nvidia-persistence.service >/dev/null <<UNIT
+[Unit]
+Description=Puget Systems: enable NVIDIA persistence mode before Docker starts
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=${smi} -pm 1
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+        $SUDO systemctl daemon-reload >/dev/null 2>&1
+        $SUDO systemctl enable puget-nvidia-persistence.service >/dev/null 2>&1
+    fi
+
+    if nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null | grep -q "Disabled"; then
+        echo -e "${YELLOW}⚠ Could not enable NVIDIA persistence mode. Run: ${BLUE}sudo nvidia-smi -pm 1${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}✓ NVIDIA persistence mode enabled (re-applied on every boot).${NC}"
+    return 0
+}

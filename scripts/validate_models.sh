@@ -19,6 +19,7 @@ NIGHTLY_PREFIX="nightly"
 
 # Fake a huge multi-vendor box so VRAM gates never hide a menu item from validation.
 GPU_VENDOR="${GPU_VENDOR:-nvidia}"; TOTAL_VRAM=1000000; VRAM_GB=1000000; GPU_COUNT=8
+HOST_RAM_GB=1000000   # system-RAM gates (Flash-Next) must not hide entries on small CI runners
 # Also claim Blackwell: entries gated on compute capability (NVFP4 needs sm_120+) must
 # still have their repos checked here, or a renamed/gated repo would slip through CI.
 COMPUTE_CAP="12.0"; COMPUTE_MAJOR=12; IS_BLACKWELL=true
