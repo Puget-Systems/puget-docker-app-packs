@@ -171,7 +171,10 @@ host_ram_gb() {
 #   a 120 GB model on the CPU at 0.2 tok/s (Vast VM, 2026-11-04). Fixed by `nvidia-smi -pm 1`.
 #   -pm 1 does not survive a reboot, and Ubuntu's nvidia-persistenced unit starts the daemon
 #   with --no-persistence-mode, so a small oneshot unit re-applies it before Docker starts
-#   (the packs auto-start with Docker on boot).
+#   (the packs auto-start with Docker on boot). The unit is enabled with --no-reload and no
+#   daemon-reload: on cgroup-v2 + systemd-cgroup hosts a systemd reload revokes running
+#   containers' GPU device access (NVML "Unknown Error"), and the host may already be serving
+#   (a GB300 with vLLM up). Boot reads the unit from disk, so the reload isn't needed.
 #   Returns 0 when persistence is on (or not applicable), 1 when it could not be enabled.
 enable_nvidia_persistence() {
     command -v nvidia-smi &>/dev/null || return 0
@@ -200,8 +203,7 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 UNIT
-        $SUDO systemctl daemon-reload >/dev/null 2>&1
-        $SUDO systemctl enable puget-nvidia-persistence.service >/dev/null 2>&1
+        $SUDO systemctl enable --no-reload puget-nvidia-persistence.service >/dev/null 2>&1
     fi
 
     if nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null | grep -q "Disabled"; then
@@ -209,5 +211,31 @@ UNIT
         return 1
     fi
     echo -e "${GREEN}✓ NVIDIA persistence mode enabled (re-applied on every boot).${NC}"
+    return 0
+}
+
+# recover_gpu_containers — restart any running container of the current compose project that
+#   has lost its NVIDIA GPU. A systemd reload (e.g. `systemctl enable docker` on Ubuntu, which
+#   goes through systemd-sysv-install) revokes running containers' device access on
+#   cgroup-v2 + systemd-cgroup hosts: NVML fails with "Unknown Error" and Ollama silently loads
+#   the next model on the CPU (1x RTX PRO 6000 VM, 2026-11-05). A restart restores access.
+#   Run from the install dir. NVIDIA only; containers without nvidia-smi injected are skipped.
+recover_gpu_containers() {
+    [ "${GPU_VENDOR:-}" = "nvidia" ] || return 0
+    local cid name
+    for cid in $(docker compose ps -q 2>/dev/null); do
+        # Only containers that were given GPUs have nvidia-smi injected by the toolkit.
+        docker exec "$cid" sh -c 'command -v nvidia-smi' >/dev/null 2>&1 || continue
+        if ! docker exec "$cid" nvidia-smi -L >/dev/null 2>&1; then
+            name=$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | tr -d /)
+            echo -e "${YELLOW}⚠ ${name} lost GPU access (systemd reload) — restarting it...${NC}"
+            docker restart "$cid" >/dev/null 2>&1
+            if docker exec "$cid" nvidia-smi -L >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ ${name} has GPU access again.${NC}"
+            else
+                echo -e "${RED}✗ ${name} still cannot reach the GPU. Run: ${BLUE}docker compose restart${NC}"
+            fi
+        fi
+    done
     return 0
 }

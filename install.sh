@@ -1096,15 +1096,21 @@ fi
 echo ""
 read -p "Would you like this container to start automatically on system boot? (Y/n): " AUTO_START
 if [[ "$AUTO_START" != "n" && "$AUTO_START" != "N" ]]; then
-    # Ensure Docker service starts on boot
-    sudo systemctl enable docker 2>/dev/null || true
-    
+    # Ensure Docker service starts on boot. Skip when it already does, and never reload
+    # systemd: a reload revokes the GPU from the containers we just started (see
+    # recover_gpu_containers in scripts/lib/gpu_detect.sh).
+    if ! systemctl is-enabled --quiet docker 2>/dev/null; then
+        sudo systemctl enable --no-reload docker 2>/dev/null || true
+    fi
+
     # The docker-compose.yml already has restart: unless-stopped
     # But we need the container to exist, so start it if not running
     cd "$INSTALL_DIR"
     if ! docker compose ps --quiet 2>/dev/null | grep -q .; then
         docker compose up -d
     fi
+    # Belt and braces: Ubuntu's systemd-sysv-install can still trigger a reload.
+    recover_gpu_containers
     cd - > /dev/null
     
     echo -e "${GREEN}✓ Auto-start configured.${NC}"

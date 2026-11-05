@@ -190,8 +190,17 @@ ensure_ollama_gpu() {
             sleep 1
         done
         if echo "$libs" | grep -qx "CUDA"; then
-            echo -e "${GREEN}✓ Ollama is using the NVIDIA GPU(s).${NC}"
-            return 0
+            # Discovery ran at container start; GPU access can be revoked afterwards (systemd
+            # reload), so also check the device is reachable right now.
+            if ! docker exec puget_ollama sh -c 'command -v nvidia-smi' >/dev/null 2>&1 \
+               || docker exec puget_ollama nvidia-smi -L >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ Ollama is using the NVIDIA GPU(s).${NC}"
+                return 0
+            fi
+            echo -e "${YELLOW}⚠ Ollama lost access to the GPU(s) — restarting it...${NC}"
+            docker compose restart inference >/dev/null 2>&1
+            wait_for_ollama >/dev/null || break
+            continue
         fi
         [ -z "$libs" ] && return 0   # older/newer Ollama without this log line: don't guess
         [ "$attempt" = 2 ] && break
@@ -204,8 +213,9 @@ ensure_ollama_gpu() {
     echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
     echo -e "${RED}✗ Ollama is running on the CPU only — models will be extremely slow.${NC}"
     echo -e "${RED}════════════════════════════════════════════════════════════${NC}"
-    echo "  Ollama could not initialise the NVIDIA GPU(s) in time and fell back to the CPU."
+    echo "  Ollama could not reach the NVIDIA GPU(s) and fell back to the CPU."
     echo -e "  Fix: ${BLUE}sudo nvidia-smi -pm 1 && docker compose restart inference${NC}"
+    echo "  If it happens after a 'systemctl' command, the restart alone fixes it."
     echo -e "  Check: ${BLUE}docker compose logs inference | grep 'inference compute'${NC} should list CUDA devices."
     echo ""
     return 1
