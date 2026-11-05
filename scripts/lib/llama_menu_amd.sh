@@ -82,15 +82,21 @@ show_llama_model_menu() {
     else
         echo -e "  11) Qwen 3.8 27B (Q8_0)       - ${RED}Requires ~32 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     fi
-    if [ "$TOTAL_VRAM" -ge 104 ]; then
-        echo "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - 125B MoE, 6B active, vision (~94 GB) [New]"
+    # Flash-Next also needs 48 GB system RAM: its ~27 GB n-gram table stays in host RAM.
+    local ram; ram=$(host_ram_gb)
+    if [ "$TOTAL_VRAM" -ge 80 ] && [ "$ram" -ge 48 ]; then
+        echo "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - 125B MoE, 6B active, vision (~69 GB VRAM + 27 GB RAM) [New]"
+    elif [ "$TOTAL_VRAM" -lt 80 ]; then
+        echo -e "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - ${RED}Requires ~80 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     else
-        echo -e "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - ${RED}Requires ~104 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  12) Qwen 3.8 Flash-Next (UD-IQ4_XS) - ${RED}Requires 48 GB system RAM (you have ${ram} GB)${NC}"
     fi
-    if [ "$TOTAL_VRAM" -ge 88 ]; then
-        echo "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - Same model, 2-bit dynamic (~79 GB) [New]"
+    if [ "$TOTAL_VRAM" -ge 72 ] && [ "$ram" -ge 48 ]; then
+        echo "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - Same model, 2-bit dynamic (~57 GB VRAM + 27 GB RAM) [New]"
+    elif [ "$TOTAL_VRAM" -lt 72 ]; then
+        echo -e "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - ${RED}Requires ~72 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
     else
-        echo -e "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - ${RED}Requires ~88 GB VRAM (you have ${TOTAL_VRAM} GB)${NC}"
+        echo -e "  13) Qwen 3.8 Flash-Next (UD-Q2_K_XL) - ${RED}Requires 48 GB system RAM (you have ${ram} GB)${NC}"
     fi
     echo "  14) Custom GGUF (advanced)    - Enter any HuggingFace GGUF repo:quant"
     echo "  15) Skip / configure later"
@@ -126,10 +132,11 @@ recommend_llama_context() {
 
 # select_llama_model <choice>
 #   Sets LLAMA_MODEL_ID (HF GGUF repo:quant), LLAMA_IMAGE, LLAMA_GPU_COUNT, LLAMA_MAX_CTX,
-#   LLAMA_MODEL_SIZE_GB. Returns 0 = selected, 1 = insufficient VRAM, 2 = skip/custom.
+#   LLAMA_MODEL_SIZE_GB (download size), LLAMA_VRAM_GB (GPU share, only when smaller).
+#   Returns 0 = selected, 1 = insufficient VRAM, 2 = skip/custom.
 select_llama_model() {
     local choice="$1"
-    LLAMA_MODEL_ID=""; LLAMA_MODEL_SIZE_GB=0
+    LLAMA_MODEL_ID=""; LLAMA_MODEL_SIZE_GB=0; LLAMA_VRAM_GB=""
     LLAMA_GPU_COUNT=$GPU_COUNT
     if [ "${GPU_VENDOR:-}" = "intel" ]; then
         # Pinned build: the floating server-intel tag moves daily. b11459 is the build the
@@ -180,18 +187,24 @@ select_llama_model() {
             # Qwen 3.8 Flash-Next (arch qwen4exp): 125B MoE, 6B active, plus 51B of n-gram
             # embeddings. llama.cpp added the arch on 2026-08-27 (#27742), so the rolling
             # server-rocm tag and the pinned Intel b11459 build (2026-10-07) both load it.
-            # Gated on the whole file fitting in VRAM (size x 1.1), so in practice this means
-            # 128 GB boxes (4x R9700 / 4x B70) for IQ4_XS and 96 GB boxes for Q2_K_XL. Unsloth
-            # also documents a mixed RAM+VRAM mode; that path is not wired up here yet.
-            # Unsloth publishes 1-bit through Q8_0. Q3_K_XL (90 GB) and Q4_K_XL (111 GB) don't
-            # fit any VRAM tier the 2-bit and IQ4 entries miss. Not yet benchmarked on AMD or
-            # Intel; Intel keeps the UD build because ggml-org's plain IQ4_NL is 102 GB.
+            # llama.cpp keeps the n-gram table (27.5 GB, the same last split in every quant) in
+            # host RAM as CPU_Mapped, so VRAM holds much less than the download. Measured
+            # 2026-11-04 on 4x RTX 5090 (CUDA build 12098, layer split, 2 slots): IQ4_XS ~69 GB
+            # VRAM (94 GB file), Q2_K_XL ~57 GB (79 GB file), KV tiny (12 of 48 layers attend).
+            # Gates add ~15% headroom for ROCm/SYCL overhead; not yet measured on AMD or Intel.
+            # LLAMA_MODEL_SIZE_GB stays the download size (the start-up monitor shows download %
+            # against it); LLAMA_VRAM_GB is the GPU-resident share, used for context sizing.
+            # Intel keeps the UD build because ggml-org's plain IQ4_NL is 102 GB, also untested.
+            if [ "$(host_ram_gb)" -lt 48 ]; then
+                echo -e "${RED}✗ Qwen 3.8 Flash-Next keeps a ~27 GB embedding table in system RAM; it needs 48 GB RAM (you have $(host_ram_gb) GB).${NC}"
+                return 1
+            fi
             if [ "$choice" = 12 ]; then
-                [ "$TOTAL_VRAM" -lt 104 ] && { echo -e "${RED}✗ Qwen 3.8 Flash-Next IQ4_XS needs ~104 GB (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
-                LLAMA_MODEL_ID="unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS"; LLAMA_MODEL_SIZE_GB=94
+                [ "$TOTAL_VRAM" -lt 80 ] && { echo -e "${RED}✗ Qwen 3.8 Flash-Next IQ4_XS needs ~80 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
+                LLAMA_MODEL_ID="unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS"; LLAMA_MODEL_SIZE_GB=94; LLAMA_VRAM_GB=62
             else
-                [ "$TOTAL_VRAM" -lt 88 ] && { echo -e "${RED}✗ Qwen 3.8 Flash-Next Q2_K_XL needs ~88 GB (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
-                LLAMA_MODEL_ID="unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL"; LLAMA_MODEL_SIZE_GB=79
+                [ "$TOTAL_VRAM" -lt 72 ] && { echo -e "${RED}✗ Qwen 3.8 Flash-Next Q2_K_XL needs ~72 GB VRAM (you have ${TOTAL_VRAM} GB).${NC}"; return 1; }
+                LLAMA_MODEL_ID="unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q2_K_XL"; LLAMA_MODEL_SIZE_GB=79; LLAMA_VRAM_GB=49
             fi ;;
         14)
             echo -e "${YELLOW}Custom GGUF — format owner/repo-GGUF:QUANT${NC}"
@@ -238,10 +251,12 @@ select_llama_model() {
     # single request keeps a usable window.
     LLAMA_PARALLEL="${LLAMA_DEFAULT_PARALLEL:-2}"
     local min_slot="${LLAMA_MIN_CTX_PER_SLOT:-8192}"
-    local headroom_ctx=$(( (TOTAL_VRAM - LLAMA_MODEL_SIZE_GB - 4) * 3000 ))
+    # VRAM the weights occupy: the download size unless the entry set a smaller GPU share.
+    local vram_weight="${LLAMA_VRAM_GB:-$LLAMA_MODEL_SIZE_GB}"
+    local headroom_ctx=$(( (TOTAL_VRAM - vram_weight - 4) * 3000 ))
     while [ "$LLAMA_PARALLEL" -gt 1 ] && [ $(( headroom_ctx / LLAMA_PARALLEL )) -lt "$min_slot" ]; do
         LLAMA_PARALLEL=$(( LLAMA_PARALLEL - 1 ))
     done
-    LLAMA_MAX_CTX="$(recommend_llama_context "$LLAMA_MODEL_SIZE_GB" "$TOTAL_VRAM" "$LLAMA_PARALLEL" "$min_slot")"
+    LLAMA_MAX_CTX="$(recommend_llama_context "$vram_weight" "$TOTAL_VRAM" "$LLAMA_PARALLEL" "$min_slot")"
     return 0
 }
