@@ -61,14 +61,14 @@ detect_gpus() {
         GPU_COUNT=$(ls -1q /dev/dri/renderD* | wc -l | tr -d ' ')
 
         # Determine GPU Name (fallback)
-        GPU_NAME=$(lspci -v 2>/dev/null | grep -iE 'vga|display|3d' | grep -i 'intel' | head -1 | awk -F': ' '{print $2}')
+        GPU_NAME=$(lspci -v 2>/dev/null | grep -iE 'vga|display|3d' | grep -i 'intel' | awk 'NR==1' | awk -F': ' '{print $2}')
         if [[ "$GPU_NAME" == "" ]]; then
             GPU_NAME="Intel ARC GPU"
         fi
 
         # Determine VRAM: fallback to 32GB (32768 MB) since lmem_total_bytes is missing for B70
         if command -v clinfo &> /dev/null; then
-            VRAM_MB=$(clinfo 2>/dev/null | grep -i 'Global memory size' | head -1 | awk '{print $4}' | awk '{printf "%d", $1/1024/1024}')
+            VRAM_MB=$(clinfo 2>/dev/null | grep -i 'Global memory size' | awk 'NR==1' | awk '{print $4}' | awk '{printf "%d", $1/1024/1024}')
         fi
 
         if [ -z "$VRAM_MB" ] || [ "$VRAM_MB" -eq 0 ]; then
@@ -83,10 +83,13 @@ detect_gpus() {
     # --- NVIDIA DETECTION ---
     if command -v nvidia-smi &> /dev/null; then
         GPU_VENDOR="nvidia"
-        GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-        GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-        VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+        # Query GPU 0 directly (-i 0) instead of piping to `head -1`: with several GPUs,
+        # nvidia-smi can take SIGPIPE when head exits, and under the installer's pipefail
+        # that killed install.sh silently with status 141 (~1 in 8 runs on 4x RTX 5090).
+        GPU_COUNT=$(nvidia-smi -i 0 --query-gpu=count --format=csv,noheader)
+        GPU_NAME=$(nvidia-smi -i 0 --query-gpu=gpu_name --format=csv,noheader)
+        DRIVER_VERSION=$(nvidia-smi -i 0 --query-gpu=driver_version --format=csv,noheader)
+        VRAM_MB=$(nvidia-smi -i 0 --query-gpu=memory.total --format=csv,noheader,nounits)
 
         # Unified memory GPUs (e.g., NVIDIA GB10 / DGX Spark) report [N/A] for VRAM.
         if [[ "$VRAM_MB" == *"N/A"* ]] || [[ -z "$VRAM_MB" ]] || ! [[ "$VRAM_MB" =~ ^[0-9]+$ ]]; then
@@ -109,7 +112,7 @@ detect_gpus() {
         # Every family uses the plain `nightly` tag. vLLM stopped publishing
         # `cu130-nightly` on 2026-04-23 (frozen at 0.19.2, no sm_103), and `nightly`
         # itself is now the CUDA 13.0 build, so it is the same line, kept current.
-        COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+        COMPUTE_CAP=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,noheader)
         COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
         if [ "${COMPUTE_MAJOR:-0}" -ge 10 ] 2>/dev/null; then
             IS_BLACKWELL=true

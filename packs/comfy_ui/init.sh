@@ -66,7 +66,7 @@ chmod -R 777 custom_nodes/ComfyUI-Manager 2>/dev/null || true
 # --- ComfyUI-MultiGPU (auto-install on multi-GPU systems) ---
 if [ ! -d "custom_nodes/ComfyUI-MultiGPU" ]; then
     # Check if we have multiple GPUs
-    _GPU_CT=$(nvidia-smi --query-gpu=count --format=csv,noheader 2>/dev/null | head -1)
+    _GPU_CT=$(nvidia-smi -i 0 --query-gpu=count --format=csv,noheader 2>/dev/null)
     if [ "${_GPU_CT:-1}" -gt 1 ]; then
         echo ""
         echo -e "${BLUE}Multi-GPU detected (${_GPU_CT} GPUs) — installing ComfyUI-MultiGPU...${NC}"
@@ -110,12 +110,12 @@ else
         echo -e "${RED}✗ nvidia-smi not found. NVIDIA drivers required.${NC}"
         exit 1
     fi
-    GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-    GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-    VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+    GPU_COUNT=$(nvidia-smi -i 0 --query-gpu=count --format=csv,noheader)
+    GPU_NAME=$(nvidia-smi -i 0 --query-gpu=gpu_name --format=csv,noheader)
+    VRAM_MB=$(nvidia-smi -i 0 --query-gpu=memory.total --format=csv,noheader,nounits)
     VRAM_GB=$((VRAM_MB / 1024))
     TOTAL_VRAM=$((VRAM_GB * GPU_COUNT))
-    COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+    COMPUTE_CAP=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,noheader)
     COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
     if [ "${COMPUTE_MAJOR:-0}" -ge 12 ] 2>/dev/null; then
         IS_BLACKWELL=true

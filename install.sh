@@ -284,8 +284,8 @@ elif [ "$GPU_VENDOR" == "nvidia" ] || command -v nvidia-smi &> /dev/null; then
             echo "  Skipping driver installation. GPU containers may fail to start."
         fi
     else
-        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-        GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
+        DRIVER_VERSION=$(nvidia-smi -i 0 --query-gpu=driver_version --format=csv,noheader)
+        GPU_NAME=$(nvidia-smi -i 0 --query-gpu=gpu_name --format=csv,noheader)
         echo -e "${GREEN}✓ NVIDIA Driver found: $DRIVER_VERSION ($GPU_NAME)${NC}"
     fi
 
@@ -1057,10 +1057,15 @@ if [[ "$START_NOW" != "n" && "$START_NOW" != "N" ]]; then
                     fi
 
                     if [[ -n "$MODEL_TAG" ]]; then
-                         ensure_ollama_gpu || true
+                         OLLAMA_ON_GPU=1
+                         ensure_ollama_gpu || OLLAMA_ON_GPU=0
                          echo -e "${BLUE}Downloading $MODEL_TAG... (This may take a while for larger models)${NC}"
                          docker compose exec -T inference ollama pull "$MODEL_TAG"
-                         echo -e "${GREEN}✓ Model ready.${NC}"
+                         if [ "$OLLAMA_ON_GPU" = 1 ]; then
+                             echo -e "${GREEN}✓ Model ready.${NC}"
+                         else
+                             echo -e "${YELLOW}⚠ Model downloaded, but Ollama is on the CPU only — see the warning above.${NC}"
+                         fi
                     else
                          echo -e "Run ${BLUE}./init.sh${NC} later to download models."
                     fi

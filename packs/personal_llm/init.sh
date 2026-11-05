@@ -126,12 +126,17 @@ if ! wait_for_ollama; then
     exit 1
 fi
 
-ensure_ollama_gpu || true
+OLLAMA_ON_GPU=1
+ensure_ollama_gpu || OLLAMA_ON_GPU=0
 
 echo -e "${BLUE}Pulling ${OLLAMA_MODEL_TAG}... (This may take a while for larger models)${NC}"
 docker compose exec -T inference ollama pull "$OLLAMA_MODEL_TAG"
 
 echo ""
-echo -e "${GREEN}✓ Model ready!${NC}"
+if [ "$OLLAMA_ON_GPU" = 1 ]; then
+    echo -e "${GREEN}✓ Model ready!${NC}"
+else
+    echo -e "${YELLOW}⚠ Model downloaded, but Ollama is on the CPU only — see the warning above.${NC}"
+fi
 echo -e "  Access the Chat UI at: ${BLUE}http://localhost:3000${NC}"
 echo -e "  Select '${OLLAMA_MODEL_TAG}' from the dropdown at the top."
