@@ -61,14 +61,14 @@ detect_gpus() {
         GPU_COUNT=$(ls -1q /dev/dri/renderD* | wc -l | tr -d ' ')
 
         # Determine GPU Name (fallback)
-        GPU_NAME=$(lspci -v 2>/dev/null | grep -iE 'vga|display|3d' | grep -i 'intel' | head -1 | awk -F': ' '{print $2}')
+        GPU_NAME=$(lspci -v 2>/dev/null | grep -iE 'vga|display|3d' | grep -i 'intel' | awk 'NR==1' | awk -F': ' '{print $2}')
         if [[ "$GPU_NAME" == "" ]]; then
             GPU_NAME="Intel ARC GPU"
         fi
 
         # Determine VRAM: fallback to 32GB (32768 MB) since lmem_total_bytes is missing for B70
         if command -v clinfo &> /dev/null; then
-            VRAM_MB=$(clinfo 2>/dev/null | grep -i 'Global memory size' | head -1 | awk '{print $4}' | awk '{printf "%d", $1/1024/1024}')
+            VRAM_MB=$(clinfo 2>/dev/null | grep -i 'Global memory size' | awk 'NR==1' | awk '{print $4}' | awk '{printf "%d", $1/1024/1024}')
         fi
 
         if [ -z "$VRAM_MB" ] || [ "$VRAM_MB" -eq 0 ]; then
@@ -83,10 +83,13 @@ detect_gpus() {
     # --- NVIDIA DETECTION ---
     if command -v nvidia-smi &> /dev/null; then
         GPU_VENDOR="nvidia"
-        GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
-        GPU_NAME=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | head -1)
-        DRIVER_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
-        VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+        # Query GPU 0 directly (-i 0) instead of piping to `head -1`: with several GPUs,
+        # nvidia-smi can take SIGPIPE when head exits, and under the installer's pipefail
+        # that killed install.sh silently with status 141 (~1 in 8 runs on 4x RTX 5090).
+        GPU_COUNT=$(nvidia-smi -i 0 --query-gpu=count --format=csv,noheader)
+        GPU_NAME=$(nvidia-smi -i 0 --query-gpu=gpu_name --format=csv,noheader)
+        DRIVER_VERSION=$(nvidia-smi -i 0 --query-gpu=driver_version --format=csv,noheader)
+        VRAM_MB=$(nvidia-smi -i 0 --query-gpu=memory.total --format=csv,noheader,nounits)
 
         # Unified memory GPUs (e.g., NVIDIA GB10 / DGX Spark) report [N/A] for VRAM.
         if [[ "$VRAM_MB" == *"N/A"* ]] || [[ -z "$VRAM_MB" ]] || ! [[ "$VRAM_MB" =~ ^[0-9]+$ ]]; then
@@ -109,7 +112,7 @@ detect_gpus() {
         # Every family uses the plain `nightly` tag. vLLM stopped publishing
         # `cu130-nightly` on 2026-04-23 (frozen at 0.19.2, no sm_103), and `nightly`
         # itself is now the CUDA 13.0 build, so it is the same line, kept current.
-        COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+        COMPUTE_CAP=$(nvidia-smi -i 0 --query-gpu=compute_cap --format=csv,noheader)
         COMPUTE_MAJOR=$(echo "$COMPUTE_CAP" | cut -d. -f1)
         if [ "${COMPUTE_MAJOR:-0}" -ge 10 ] 2>/dev/null; then
             IS_BLACKWELL=true
@@ -171,7 +174,10 @@ host_ram_gb() {
 #   a 120 GB model on the CPU at 0.2 tok/s (Vast VM, 2026-11-04). Fixed by `nvidia-smi -pm 1`.
 #   -pm 1 does not survive a reboot, and Ubuntu's nvidia-persistenced unit starts the daemon
 #   with --no-persistence-mode, so a small oneshot unit re-applies it before Docker starts
-#   (the packs auto-start with Docker on boot).
+#   (the packs auto-start with Docker on boot). The unit is enabled with --no-reload and no
+#   daemon-reload: on cgroup-v2 + systemd-cgroup hosts a systemd reload revokes running
+#   containers' GPU device access (NVML "Unknown Error"), and the host may already be serving
+#   (a GB300 with vLLM up). Boot reads the unit from disk, so the reload isn't needed.
 #   Returns 0 when persistence is on (or not applicable), 1 when it could not be enabled.
 enable_nvidia_persistence() {
     command -v nvidia-smi &>/dev/null || return 0
@@ -200,8 +206,7 @@ RemainAfterExit=yes
 [Install]
 WantedBy=multi-user.target
 UNIT
-        $SUDO systemctl daemon-reload >/dev/null 2>&1
-        $SUDO systemctl enable puget-nvidia-persistence.service >/dev/null 2>&1
+        $SUDO systemctl enable --no-reload puget-nvidia-persistence.service >/dev/null 2>&1
     fi
 
     if nvidia-smi --query-gpu=persistence_mode --format=csv,noheader 2>/dev/null | grep -q "Disabled"; then
@@ -209,5 +214,31 @@ UNIT
         return 1
     fi
     echo -e "${GREEN}✓ NVIDIA persistence mode enabled (re-applied on every boot).${NC}"
+    return 0
+}
+
+# recover_gpu_containers — restart any running container of the current compose project that
+#   has lost its NVIDIA GPU. A systemd reload (e.g. `systemctl enable docker` on Ubuntu, which
+#   goes through systemd-sysv-install) revokes running containers' device access on
+#   cgroup-v2 + systemd-cgroup hosts: NVML fails with "Unknown Error" and Ollama silently loads
+#   the next model on the CPU (1x RTX PRO 6000 VM, 2026-11-05). A restart restores access.
+#   Run from the install dir. NVIDIA only; containers without nvidia-smi injected are skipped.
+recover_gpu_containers() {
+    [ "${GPU_VENDOR:-}" = "nvidia" ] || return 0
+    local cid name
+    for cid in $(docker compose ps -q 2>/dev/null); do
+        # Only containers that were given GPUs have nvidia-smi injected by the toolkit.
+        docker exec "$cid" sh -c 'command -v nvidia-smi' >/dev/null 2>&1 || continue
+        if ! docker exec "$cid" nvidia-smi -L >/dev/null 2>&1; then
+            name=$(docker inspect -f '{{.Name}}' "$cid" 2>/dev/null | tr -d /)
+            echo -e "${YELLOW}⚠ ${name} lost GPU access (systemd reload) — restarting it...${NC}"
+            docker restart "$cid" >/dev/null 2>&1
+            if docker exec "$cid" nvidia-smi -L >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ ${name} has GPU access again.${NC}"
+            else
+                echo -e "${RED}✗ ${name} still cannot reach the GPU. Run: ${BLUE}docker compose restart${NC}"
+            fi
+        fi
+    done
     return 0
 }
